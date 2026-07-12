@@ -19,11 +19,10 @@ with col2:
 def procesar_csv(file):
     try:
         bytes_data = file.getvalue()
-        # Cambiamos a latin-1 para que no falle con acentos o eñes de Profit
+        # Forzamos latin-1 para absorber acentos y eñes sin caídas
         texto = bytes_data.decode("latin-1", errors="ignore").split('\n')
         separador = ';' if any(';' in linea for linea in texto[:5]) else ','
         file.seek(0)
-        # Forzamos a pandas a leer con la misma codificación
         df = pd.read_csv(file, sep=separador, encoding="latin-1", on_bad_lines="skip")
         return df
     except Exception as e:
