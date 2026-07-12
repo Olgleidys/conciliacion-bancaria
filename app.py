@@ -3,30 +3,37 @@ import pandas as pd
 import io
 
 # Configuración de la página web corporativa
-st.set_page_config(page_title="Conciliación Bancaria Multi-Empresa", page_icon="📊", layout="wide")
+st.set_page_config(page_title="Conciliación Bancaria con KPIs", page_icon="📊", layout="wide")
 
-# ESTILOS CSS PERSONALIZADOS: Look Azul Corporativo Oscuro / Premium
+# ESTILOS CSS PERSONALIZADOS: Look Premium de Alta Visibilidad
 custom_css = """
     <style>
-    /* Fondo principal de la app */
     .stApp {
         background-color: #0d1b2a;
         color: #e0e1dd;
     }
-    
-    /* Títulos principales */
     h1, h2, h3 {
         color: #ffffff !important;
         font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
     }
-    
-    /* Etiquetas de los selectores y cajas de carga */
     .stSelectbox label, .stFileUploader label {
         color: #e0e1dd !important;
         font-weight: bold !important;
     }
-    
-    /* Tarjetas de Métricas */
+    /* Pestañas de alto contraste corregidas */
+    button[data-baseweb="tab"] p {
+        color: #e0e1dd !important;
+        font-size: 16px !important;
+        font-weight: 500 !important;
+    }
+    button[data-baseweb="tab"][aria-selected="true"] p {
+        color: #00b4d8 !important;
+        font-weight: bold !important;
+    }
+    div[data-baseweb="tab-highlight-line"] {
+        background-color: #00b4d8 !important;
+    }
+    /* Métricas */
     div[data-testid="stMetricValue"] {
         color: #00b4d8 !important;
         font-size: 28px !important;
@@ -35,23 +42,16 @@ custom_css = """
     div[data-testid="stMetricLabel"] {
         color: #ffffff !important;
     }
-    
-    /* Botón de descarga de Excel */
     .stDownloadButton button {
         background-color: #0077b6 !important;
         color: white !important;
         border-radius: 8px !important;
-        border: none !important;
-        padding: 10px 24px !important;
         font-weight: bold !important;
-        transition: background-color 0.3s ease;
     }
     .stDownloadButton button:hover {
         background-color: #00b4d8 !important;
         color: #0d1b2a !important;
     }
-
-    /* Pie de página elegante fijo abajo */
     .footer {
         position: fixed;
         left: 0;
@@ -70,81 +70,48 @@ custom_css = """
 """
 st.markdown(custom_css, unsafe_allow_html=True)
 
-# Render del pie de página autoral
-footer_html = """
-    <div class="footer">
-        <p>© 2026 | Sistema Automatizado de Conciliación Bancaria — Creado por Olgleidys Hernández 👩‍💻✨</p>
-    </div>
-"""
-st.markdown(footer_html, unsafe_allow_html=True)
+# Footer
+st.markdown('<div class="footer"><p>© 2026 | Sistema Automatizado de Conciliación Bancaria — Creado por Olgleidys Hernández 👩‍💻✨</p></div>', unsafe_allow_html=True)
 
-# TÍTULO PRINCIPAL
 st.title("📊 Sistema Automatizado de Conciliación Bancaria")
 
-# FILA 1: Configuración de Empresa y Banco
+# Configuración básica
 c1, c2 = st.columns(2)
-
 with c1:
-    empresa_seleccionada = st.selectbox(
-        "🏢 Seleccione la empresa a conciliar:",
-        ["Thermo Group", "Mystic", "Keravital"]
-    )
+    empresa_seleccionada = st.selectbox("🏢 Seleccione la empresa a conciliar:", ["Thermo Group", "Mystic", "Keravital"])
 
-# Diccionario de bancos por empresa
 bancos_por_empresa = {
     "Thermo Group": ["Banesco", "Venezuela", "Banplus", "Mercantil", "Banco Fondo Común"],
     "Mystic": ["Banesco", "Venezuela", "Banplus", "Banplus Mazal"],
-    "Keravital": ["Banesco", "Venezuela"] # Recuerda expandir esta lista cuando gustes
+    "Keravital": ["Banesco", "Venezuela"]
 }
 
 with c2:
-    bancos_disponibles = bancos_por_empresa[empresa_seleccionada]
-    banco_seleccionado = st.selectbox(
-        "🏦 Seleccione el banco a conciliar:",
-        bancos_disponibles
-    )
+    banco_seleccionado = st.selectbox("🏦 Seleccione el banco a conciliar:", bancos_por_empresa[empresa_seleccionada])
 
-# FILA 2: Configuración del Período de Auditoría (Frecuencia, Mes y Año)
 st.markdown("### 📅 Configuración del Período")
 p1, p2, p3 = st.columns(3)
-
-with p1:
-    frecuencia = st.selectbox(
-        "⏱️ Frecuencia del control:",
-        ["Semanal", "Quincenal", "Mensual"]
-    )
-
-with p2:
-    mes = st.selectbox(
-        "📆 Mes correspondiente:",
-        ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
-    )
-
-with p3:
-    ano = st.selectbox(
-        "📅 Año:",
-        ["2026", "2027", "2025"]
-    )
+with p1: frecuencia = st.selectbox("⏱️ Frecuencia del control:", ["Semanal", "Quincenal", "Mensual"])
+with p2: mes = st.selectbox("📆 Mes correspondiente:", ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"])
+with p3: ano = st.selectbox("📅 Año:", ["2026", "2027", "2025"])
 
 st.markdown("---")
-st.markdown(f"### Panel de Control: **{empresa_seleccionada}**")
-st.info(f"⚙️ **Configuración activa:** Banco *{banco_seleccionado}* | Control *{frecuencia}* | Período: *{mes} {ano}*")
+st.info(f"⚙️ **Configuración activa:** {empresa_seleccionada} | {banco_seleccionado} | {frecuencia} de {mes} {ano}")
 
-# Zona de carga de archivos en dos columnas
 col1, col2 = st.columns(2)
-
-with col1:
-    banco_file = st.file_uploader(f"📥 Cargar Estado de Cuenta de {banco_seleccionado} (.csv)", type=["csv"])
-with col2:
-    profit_file = st.file_uploader(f"📥 Cargar Reporte de Profit Plus para {empresa_seleccionada} (.csv)", type=["csv"])
+with col1: banco_file = st.file_uploader(f"📥 Cargar Estado de Cuenta de {banco_seleccionado} (.csv)", type=["csv"])
+with col2: profit_file = st.file_uploader(f"📥 Cargar Reporte de Profit Plus (.csv)", type=["csv"])
 
 def procesar_csv(file):
     try:
         df = pd.read_csv(file, sep=None, encoding="latin-1", engine="python", on_bad_lines="skip")
         return df
-    except Exception as e:
-        st.error(f"Error al leer el archivo: {e}")
+    except:
         return None
+
+# Función auxiliar para convertir columnas monetarias a números limpios
+def limpiar_monto(serie):
+    return pd.to_numeric(serie.astype(str).str.replace('.', '', regex=False).str.replace(',', '.', regex=False).str.strip(), errors='coerce').fillna(0)
 
 if banco_file and profit_file:
     df_banco = procesar_csv(banco_file)
@@ -155,10 +122,8 @@ if banco_file and profit_file:
             df_banco.columns = [str(c).strip() for c in df_banco.columns]
             df_profit.columns = [str(c).strip() for c in df_profit.columns]
 
-            while len(df_banco.columns) < 5:
-                df_banco[f'Comodin_B_{len(df_banco.columns)}'] = ""
-            while len(df_profit.columns) < 5:
-                df_profit[f'Comodin_P_{len(df_profit.columns)}'] = 0
+            while len(df_banco.columns) < 5: df_banco[f'Comodin_B_{len(df_banco.columns)}'] = ""
+            while len(df_profit.columns) < 5: df_profit[f'Comodin_P_{len(df_profit.columns)}'] = 0
 
             cols_banco = list(df_banco.columns)
             cols_banco[0], cols_banco[1], cols_banco[2], cols_banco[3], cols_banco[4] = 'Fecha', 'Ref', 'Desc', 'Deb', 'Cred'
@@ -181,26 +146,48 @@ if banco_file and profit_file:
             solo_banco_df = df_banco[~df_banco['Ref'].isin(refs_profit)]
             solo_profit_df = df_profit[~df_profit['Ref'].isin(refs_banco)]
             
-            st.markdown("---")
-            m1, m2, m3 = st.columns(3)
-            m1.metric("Cruces Exitosos", f"{len(cruces_df)} mov.")
-            m2.metric(f"Pendientes en {banco_seleccionado}", f"{len(solo_banco_df)} mov.")
-            m3.metric("Pendientes en Profit", f"{len(solo_profit_df)} mov.")
-            
-            tab1, tab2, tab3 = st.tabs(["✅ Cruces Exitosos", f"🏦 Solo en {banco_seleccionado}", f"💻 Solo en Profit ({empresa_seleccionada})"])
+            # PESTAÑAS AMPLIADAS CON INDICADORES DE GESTIÓN
+            tab1, tab2, tab3, tab4 = st.tabs(["✅ Cruces Exitosos", f"🏦 Solo en {banco_seleccionado}", f"💻 Solo en Profit", "📈 Indicadores de Gestión (KPIs)"])
             
             with tab1:
                 st.subheader("Transacciones Conciliadas Correctamente")
                 st.dataframe(cruces_df[['Fecha', 'Ref', 'Desc', 'Deb', 'Cred']], use_container_width=True)
                 
             with tab2:
-                st.subheader(f"Movimientos en {banco_seleccionado} pendientes por registrar")
+                st.subheader("Movimientos en Banco pendientes por registrar")
                 st.dataframe(solo_banco_df[['Fecha', 'Ref', 'Desc', 'Deb', 'Cred']], use_container_width=True)
                 
             with tab3:
-                st.subheader(f"Movimientos en Profit pendientes por pasar por {banco_seleccionado}")
+                st.subheader("Movimientos en Profit pendientes por pasar por el Banco")
                 st.dataframe(solo_profit_df[['Fecha', 'Ref', 'Desc', 'Debe', 'Haber']], use_container_width=True)
+                
+            with tab4:
+                st.subheader("📊 Cuadro de Mando Estratégico e Indicadores")
+                
+                # Cálculos rápidos de volúmenes
+                total_banco_ops = len(df_banco)
+                ops_conciliadas = len(cruces_df)
+                tasa_eficiencia = (ops_conciliadas / total_banco_ops * 100) if total_banco_ops > 0 else 0
+                
+                # Cálculos financieros limpios
+                monto_banco_pendiente = limpiar_monto(solo_banco_df['Deb']).sum() + limpiar_monto(solo_banco_df['Cred']).sum()
+                monto_profit_pendiente = limpiar_monto(solo_profit_df['Debe']).sum() + limpiar_monto(solo_profit_df['Haber']).sum()
+                
+                # Render de Tarjetas KPI
+                kpi1, kpi2, kpi3 = st.columns(3)
+                kpi1.metric("🎯 Tasa de Conciliación", f"{tasa_eficiencia:.1f}%", help="Porcentaje de transacciones bancarias mapeadas con éxito en Profit Plus.")
+                kpi2.metric("⚠️ Pendiente Neto Banco", f"{monto_banco_pendiente:,.2f}", help="Monto total monetario acumulado que falta registrar en Profit.")
+                kpi3.metric("💻 Tránsito Neto Profit", f"{monto_profit_pendiente:,.2f}", help="Monto total registrado en Profit pendiente por efectividad bancaria.")
+                
+                # Gráfico Visual de Distribución de los Datos
+                st.markdown("#### Distribución del Volumen de Operaciones Auditadas")
+                chart_data = pd.DataFrame({
+                    'Categoría': ['Conciliados', 'Pendiente Banco', 'Pendiente Profit'],
+                    'Movimientos': [len(cruces_df), len(solo_banco_df), len(solo_profit_df)]
+                })
+                st.bar_chart(data=chart_data, x='Categoría', y='Movimientos', color='#00b4d8')
             
+            # Exportación Excel
             st.markdown("---")
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
@@ -208,21 +195,14 @@ if banco_file and profit_file:
                 solo_banco_df[['Fecha', 'Ref', 'Desc', 'Deb', 'Cred']].to_excel(writer, sheet_name='Solo_en_Banco', index=False)
                 solo_profit_df[['Fecha', 'Ref', 'Desc', 'Debe', 'Haber']].to_excel(writer, sheet_name='Solo_en_Profit', index=False)
             
-            # Formato de nombre automatizado e inteligente para tus archivos
             emp_nom = empresa_seleccionada.replace(" ", "_")
             bnc_nom = banco_seleccionado.replace(" ", "_")
             nombre_archivo_excel = f"Conciliacion_{emp_nom}_{bnc_nom}_{frecuencia}_{mes}_{ano}.xlsx"
             
-            st.download_button(
-                label=f"📥 Descargar Conciliación Completa (Excel)",
-                data=output.getvalue(),
-                file_name=nombre_archivo_excel,
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-            st.success(f"¡Conciliación de {empresa_seleccionada} procesada con éxito para el período {mes} {ano}!")
+            st.download_button(label="📥 Descargar Conciliación Completa (Excel)", data=output.getvalue(), file_name=nombre_archivo_excel, mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            st.success("¡Conciliación y KPIs procesados con éxito!")
             
         except Exception as e:
             st.error(f"Ocurrió un error al procesar los datos: {e}")
 
-# Espacio estético final
 st.markdown("<br><br><br>", unsafe_allow_html=True)
