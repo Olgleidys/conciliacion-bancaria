@@ -52,9 +52,13 @@ if banco_file and profit_file:
             for col in ['Fecha', 'Ref', 'Desc', 'Debe', 'Haber']:
                 if col not in df_profit.columns: df_profit[col] = 0
             
-            # Limpieza exhaustiva de referencias
-            df_banco['Ref'] = df_banco['Ref'].astype(str).str.strip().str.lstrip('0').str.replace('.0', '', regex=False)
-            df_profit['Ref'] = df_profit['Ref'].astype(str).str.strip().str.lstrip('0').str.replace('.0', '', regex=False)
+            # Limpieza ultra-segura de referencias (evita caídas si hay celdas vacías)
+            df_banco['Ref'] = df_banco['Ref'].fillna('').astype(str).str.strip().str.lstrip('0').str.replace('.0', '', regex=False)
+            df_profit['Ref'] = df_profit['Ref'].fillna('').astype(str).str.strip().str.lstrip('0').str.replace('.0', '', regex=False)
+            
+            # Filtramos para no cruzar filas que no tengan referencia real o queden vacías
+            df_banco = df_banco[df_banco['Ref'] != '']
+            df_profit = df_profit[df_profit['Ref'] != '']
             
             refs_profit = set(df_profit['Ref'].unique())
             refs_banco = set(df_banco['Ref'].unique())
