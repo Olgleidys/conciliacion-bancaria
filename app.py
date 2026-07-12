@@ -3,7 +3,7 @@ import pandas as pd
 import io
 
 # Configuración de la página web corporativa
-st.set_page_config(page_title="Conciliación Bancaria con KPIs", page_icon="📊", layout="wide")
+st.set_page_config(page_title="Sistema de Auditoría y Conciliación Avanzada", page_icon="📊", layout="wide")
 
 # ESTILOS CSS PERSONALIZADOS: Look Premium de Alta Visibilidad
 custom_css = """
@@ -12,15 +12,14 @@ custom_css = """
         background-color: #0d1b2a;
         color: #e0e1dd;
     }
-    h1, h2, h3 {
+    h1, h2, h3, h4 {
         color: #ffffff !important;
         font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
     }
-    .stSelectbox label, .stFileUploader label {
+    .stSelectbox label, .stFileUploader label, .stTextInput label, .stNumberInput label {
         color: #e0e1dd !important;
         font-weight: bold !important;
     }
-    /* Pestañas de alto contraste corregidas */
     button[data-baseweb="tab"] p {
         color: #e0e1dd !important;
         font-size: 16px !important;
@@ -33,10 +32,9 @@ custom_css = """
     div[data-baseweb="tab-highlight-line"] {
         background-color: #00b4d8 !important;
     }
-    /* Métricas */
     div[data-testid="stMetricValue"] {
         color: #00b4d8 !important;
-        font-size: 28px !important;
+        font-size: 26px !important;
         font-weight: bold !important;
     }
     div[data-testid="stMetricLabel"] {
@@ -70,12 +68,11 @@ custom_css = """
 """
 st.markdown(custom_css, unsafe_allow_html=True)
 
-# Footer
 st.markdown('<div class="footer"><p>© 2026 | Sistema Automatizado de Conciliación Bancaria — Creado por Olgleidys Hernández 👩‍💻✨</p></div>', unsafe_allow_html=True)
 
-st.title("📊 Sistema Automatizado de Conciliación Bancaria")
+st.title("📊 Sistema Avanzado de Conciliación Bancaria y Control de Gestión")
 
-# Configuración básica
+# FILA 1: Datos de la Empresa
 c1, c2 = st.columns(2)
 with c1:
     empresa_seleccionada = st.selectbox("🏢 Seleccione la empresa a conciliar:", ["Thermo Group", "Mystic", "Keravital"])
@@ -89,18 +86,30 @@ bancos_por_empresa = {
 with c2:
     banco_seleccionado = st.selectbox("🏦 Seleccione el banco a conciliar:", bancos_por_empresa[empresa_seleccionada])
 
-st.markdown("### 📅 Configuración del Período")
+# FILA 2: Período y Saldos de Control (El punto de partida solicitado)
+st.markdown("### 📅 Período de Auditoría y Control de Saldos")
 p1, p2, p3 = st.columns(3)
-with p1: frecuencia = st.selectbox("⏱️ Frecuencia del control:", ["Semanal", "Quincenal", "Mensual"])
-with p2: mes = st.selectbox("📆 Mes correspondiente:", ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"])
+with p1: frecuencia = st.selectbox("⏱️ Frecuencia:", ["Semanal", "Quincenal", "Mensual"])
+with p2: mes = st.selectbox("静态 Mes:", ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"])
 with p3: ano = st.selectbox("📅 Año:", ["2026", "2027", "2025"])
 
+st.markdown("#### 💵 Control de Saldos en Libros (Para Cierre de Mes)")
+s1, s2 = st.columns(2)
+with s1:
+    saldo_inicial_banco = st.number_input(f"💰 Saldo Inicial en Estado de Cuenta ({banco_seleccionado}):", value=0.0, step=100.0)
+with s2:
+    saldo_inicial_profit = st.number_input(f"💻 Saldo Inicial en Sistema Profit ({empresa_seleccionada}):", value=0.0, step=100.0)
+
 st.markdown("---")
-st.info(f"⚙️ **Configuración activa:** {empresa_seleccionada} | {banco_seleccionado} | {frecuencia} de {mes} {ano}")
+
+# MÓDULO DE AJUSTES MANUALES (Para forzar la conciliación de diferencias detectadas)
+st.markdown("### 🛠️ Registro de Diferencias Aclaradas (Revisión Manual)")
+ajustes_input = st.text_input("Ingrese las referencias separadas por coma que identificó manualmente para forzar su cruce (Ej: 14520, 998231):", "")
+referencias_ajustadas = [ref.strip().lstrip('0').replace('.0', '') for ref in ajustes_input.split(',') if ref.strip()]
 
 col1, col2 = st.columns(2)
-with col1: banco_file = st.file_uploader(f"📥 Cargar Estado de Cuenta de {banco_seleccionado} (.csv)", type=["csv"])
-with col2: profit_file = st.file_uploader(f"📥 Cargar Reporte de Profit Plus (.csv)", type=["csv"])
+with col1: banco_file = st.file_uploader(f"📥 Estado de Cuenta de {banco_seleccionado} (.csv)", type=["csv"])
+with col2: profit_file = st.file_uploader(f"📥 Reporte de Profit Plus (.csv)", type=["csv"])
 
 def procesar_csv(file):
     try:
@@ -109,7 +118,6 @@ def procesar_csv(file):
     except:
         return None
 
-# Función auxiliar para convertir columnas monetarias a números limpios
 def limpiar_monto(serie):
     return pd.to_numeric(serie.astype(str).str.replace('.', '', regex=False).str.replace(',', '.', regex=False).str.strip(), errors='coerce').fillna(0)
 
@@ -139,15 +147,24 @@ if banco_file and profit_file:
             df_banco = df_banco[df_banco['Ref'] != '']
             df_profit = df_profit[df_profit['Ref'] != '']
             
+            # Base de referencias cruzadas
             refs_profit = set(df_profit['Ref'].unique())
-            refs_banco = set(df_banco['Ref'].unique())
             
+            # Aplicar la lógica de ajustes manuales agregando las indicadas por Olgleidys
+            if referencias_ajustadas:
+                refs_profit.update(referencias_ajustadas)
+            
+            refs_banco = set(df_banco['Ref'].unique())
+            if referencias_ajustadas:
+                refs_banco.update(referencias_ajustadas)
+
+            # Clasificación de cruces
             cruces_df = df_banco[df_banco['Ref'].isin(refs_profit)]
             solo_banco_df = df_banco[~df_banco['Ref'].isin(refs_profit)]
             solo_profit_df = df_profit[~df_profit['Ref'].isin(refs_banco)]
             
-            # PESTAÑAS AMPLIADAS CON INDICADORES DE GESTIÓN
-            tab1, tab2, tab3, tab4 = st.tabs(["✅ Cruces Exitosos", f"🏦 Solo en {banco_seleccionado}", f"💻 Solo en Profit", "📈 Indicadores de Gestión (KPIs)"])
+            # PESTAÑAS DEL PANEL
+            tab1, tab2, tab3, tab4, tab5 = st.tabs(["✅ Cruces Exitosos", "🏦 Solo en Banco", "💻 Solo en Profit", "📈 Análisis de Gestión y KPIs", "🔒 Amarre de Saldos (Cierre)"])
             
             with tab1:
                 st.subheader("Transacciones Conciliadas Correctamente")
@@ -162,31 +179,52 @@ if banco_file and profit_file:
                 st.dataframe(solo_profit_df[['Fecha', 'Ref', 'Desc', 'Debe', 'Haber']], use_container_width=True)
                 
             with tab4:
-                st.subheader("📊 Cuadro de Mando Estratégico e Indicadores")
+                st.subheader("📊 Línea de Flujo y KPIs Estratégicos")
                 
-                # Cálculos rápidos de volúmenes
                 total_banco_ops = len(df_banco)
                 ops_conciliadas = len(cruces_df)
                 tasa_eficiencia = (ops_conciliadas / total_banco_ops * 100) if total_banco_ops > 0 else 0
                 
-                # Cálculos financieros limpios
-                monto_banco_pendiente = limpiar_monto(solo_banco_df['Deb']).sum() + limpiar_monto(solo_banco_df['Cred']).sum()
-                monto_profit_pendiente = limpiar_monto(solo_profit_df['Debe']).sum() + limpiar_monto(solo_profit_df['Haber']).sum()
+                # Clasificador de Línea de Flujo para Artículos de Oficina / Papelería
+                df_banco['Desc_Lower'] = df_banco['Desc'].astype(str).str.lower()
+                oficina_df = df_banco[df_banco['Desc_Lower'].str.contains('oficina|papeleria|articulos|compra|libreria', na=False)]
+                monto_oficina = limpiar_monto(oficina_df['Deb']).sum() + limpiar_monto(oficina_df['Cred']).sum()
                 
-                # Render de Tarjetas KPI
-                kpi1, kpi2, kpi3 = st.columns(3)
-                kpi1.metric("🎯 Tasa de Conciliación", f"{tasa_eficiencia:.1f}%", help="Porcentaje de transacciones bancarias mapeadas con éxito en Profit Plus.")
-                kpi2.metric("⚠️ Pendiente Neto Banco", f"{monto_banco_pendiente:,.2f}", help="Monto total monetario acumulado que falta registrar en Profit.")
-                kpi3.metric("💻 Tránsito Neto Profit", f"{monto_profit_pendiente:,.2f}", help="Monto total registrado en Profit pendiente por efectividad bancaria.")
+                k1, k2, k3 = st.columns(3)
+                k1.metric("🎯 Eficiencia de Conciliación", f"{tasa_eficiencia:.1f}%")
+                k2.metric("📎 Flujo: Gastos de Oficina", f"{monto_oficina:,.2f} Bs", help="Monto acumulado detectado automáticamente bajo el concepto de artículos de oficina.")
+                k3.metric("💼 Operaciones Totales", f"{total_banco_ops} mov.")
                 
-                # Gráfico Visual de Distribución de los Datos
-                st.markdown("#### Distribución del Volumen de Operaciones Auditadas")
+                st.markdown("#### Proporción de Conciliación Física de Datos")
                 chart_data = pd.DataFrame({
-                    'Categoría': ['Conciliados', 'Pendiente Banco', 'Pendiente Profit'],
+                    'Estado': ['Conciliados', 'Pendiente Banco', 'Pendiente Profit'],
                     'Movimientos': [len(cruces_df), len(solo_banco_df), len(solo_profit_df)]
                 })
-                st.bar_chart(data=chart_data, x='Categoría', y='Movimientos', color='#00b4d8')
-            
+                st.bar_chart(data=chart_data, x='Estado', y='Movimientos', color='#00b4d8')
+                
+            with tab5:
+                st.subheader("🔒 Módulo de Cierre e Igualdad de Saldos")
+                st.markdown("Este módulo consolida matemáticamente los saldos para asegurar que el Punto de Partida del mes siguiente sea exacto.")
+                
+                # Sumas totales conciliadas
+                total_creditos_banco = limpiar_monto(cruces_df['Cred']).sum()
+                total_debitos_banco = limpiar_monto(cruces_df['Deb']).sum()
+                
+                saldo_final_banco_calculado = saldo_inicial_banco + total_creditos_banco - total_debitos_banco
+                saldo_final_profit_calculado = saldo_inicial_profit + limpiar_monto(cruces_df['Haber']).sum() - limpiar_monto(cruces_df['Debe']).sum()
+                
+                c_amarre1, c_amarre2 = st.columns(2)
+                with c_amarre1:
+                    st.metric("📋 Saldo Final Conciliado en Banco", f"{saldo_final_banco_calculado:,.2f} Bs")
+                with c_amarre2:
+                    st.metric("💻 Saldo Final Conciliado en Profit", f"{saldo_final_profit_calculado:,.2f} Bs")
+                
+                diferencia_saldos = abs(saldo_final_banco_calculado - saldo_final_profit_calculado)
+                if diferencia_saldos < 0.05:
+                    st.success("🎉 ¡CONCILIACIÓN CUADRADA PERFECCIÓN! Los saldos finales coinciden exactamente. Este es tu punto de partida oficial para el próximo período.")
+                else:
+                    st.warning(f"⚠️ Alerta: Existe una discrepancia de {diferencia_saldos:,.2f} Bs entre los saldos finales conciliados. Verifique los saldos iniciales introducidos o registre las referencias aclaradas arriba.")
+
             # Exportación Excel
             st.markdown("---")
             output = io.BytesIO()
@@ -200,7 +238,6 @@ if banco_file and profit_file:
             nombre_archivo_excel = f"Conciliacion_{emp_nom}_{bnc_nom}_{frecuencia}_{mes}_{ano}.xlsx"
             
             st.download_button(label="📥 Descargar Conciliación Completa (Excel)", data=output.getvalue(), file_name=nombre_archivo_excel, mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-            st.success("¡Conciliación y KPIs procesados con éxito!")
             
         except Exception as e:
             st.error(f"Ocurrió un error al procesar los datos: {e}")
