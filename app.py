@@ -36,8 +36,23 @@ if banco_file and profit_file:
     if df_banco is not None and df_profit is not None:
         try:
             # Estandarización de columnas fijas
-            df_banco.columns = ['Fecha', 'Ref', 'Desc', 'Deb', 'Cred']
-            df_profit.columns = ['Fecha', 'Ref', 'Desc', 'Debe', 'Haber']
+# Estandarización dinámica de columnas según lo que traiga el archivo
+            if len(df_banco.columns) >= 5:
+                df_banco.columns = ['Fecha', 'Ref', 'Desc', 'Deb', 'Cred'] + list(df_banco.columns[5:])
+            else:
+                st.error("El archivo del Banco tiene menos de 5 columnas. Por favor, revísalo.")
+                st.stop()
+                
+            if len(df_profit.columns) == 4:
+                df_profit.columns = ['Fecha', 'Ref', 'Desc', 'Monto']
+                # Si viene consolidado en una columna, duplicamos para simular Debe/Haber y no romper el resto
+                df_profit['Debe'] = df_profit['Monto']
+                df_profit['Haber'] = 0
+            elif len(df_profit.columns) >= 5:
+                df_profit.columns = ['Fecha', 'Ref', 'Desc', 'Debe', 'Haber'] + list(df_profit.columns[5:])
+            else:
+                st.error("El archivo de Profit tiene menos de 4 columnas. Por favor, revísalo.")
+                st.stop()
             
             # Limpieza exhaustiva de referencias
             df_banco['Ref'] = df_banco['Ref'].astype(str).str.strip().str.lstrip('0').str.replace('.0', '', regex=False)
