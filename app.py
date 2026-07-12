@@ -18,12 +18,8 @@ with col2:
 
 def procesar_csv(file):
     try:
-        bytes_data = file.getvalue()
-        # Forzamos latin-1 para absorber acentos y eñes sin caídas
-        texto = bytes_data.decode("latin-1", errors="ignore").split('\n')
-        separador = ';' if any(';' in linea for linea in texto[:5]) else ','
-        file.seek(0)
-        df = pd.read_csv(file, sep=separador, encoding="latin-1", on_bad_lines="skip")
+        # Forzamos la lectura con el motor de python que detecta el separador automáticamente (, o ; o tab)
+        df = pd.read_csv(file, sep=None, encoding="latin-1", engine="python", on_bad_lines="skip")
         return df
     except Exception as e:
         st.error(f"Error al leer el archivo: {e}")
@@ -35,22 +31,24 @@ if banco_file and profit_file:
     
     if df_banco is not None and df_profit is not None:
         try:
-            # ASIGNACIÓN ULTRA-ROBUSTA DE COLUMNAS (Evita el Length Mismatch)
-            # Banco: Forzamos nombres a las primeras columnas disponibles
-            nombres_banco = ['Fecha', 'Ref', 'Desc', 'Deb', 'Cred']
-            nuevas_cols_banco = nombres_banco[:len(df_banco.columns)] + list(df_banco.columns[len(nombres_banco):])
-            df_banco.columns = nuevas_cols_banco
-            
-            # Profit: Forzamos nombres a las primeras columnas disponibles
-            nombres_profit = ['Fecha', 'Ref', 'Desc', 'Debe', 'Haber']
-            nuevas_cols_profit = nombres_profit[:len(df_profit.columns)] + list(df_profit.columns[len(nombres_profit):])
-            df_profit.columns = nuevas_cols_profit
+            # Limpieza inicial de nombres de columnas eliminando espacios ocultos
+            df_banco.columns = [str(c).strip() for c in df_banco.columns]
+            df_profit.columns = [str(c).strip() for c in df_profit.columns]
 
-            # Aseguramos que existan todas las columnas clave (si no existen, las crea vacías)
-            for col in ['Fecha', 'Ref', 'Desc', 'Deb', 'Cred']:
-                if col not in df_banco.columns: df_banco[col] = 0
-            for col in ['Fecha', 'Ref', 'Desc', 'Debe', 'Haber']:
-                if col not in df_profit.columns: df_profit[col] = 0
+            # Si el archivo se leyó mal y tiene menos columnas de las necesarias, creamos columnas comodín
+            while len(df_banco.columns) < 5:
+                df_banco[f'Comodin_B_{len(df_banco.columns)}'] = ""
+            while len(df_profit.columns) < 5:
+                df_profit[f'Comodin_P_{len(df_profit.columns)}'] = 0
+
+            # Asignación segura de las 5 columnas principales
+            cols_banco = list(df_banco.columns)
+            cols_banco[0], cols_banco[1], cols_banco[2], cols_banco[3], cols_banco[4] = 'Fecha', 'Ref', 'Desc', 'Deb', 'Cred'
+            df_banco.columns = cols_banco
+
+            cols_profit = list(df_profit.columns)
+            cols_profit[0], cols_profit[1], cols_profit[2], cols_profit[3], cols_profit[4] = 'Fecha', 'Ref', 'Desc', 'Debe', 'Haber'
+            df_profit.columns = cols_profit
             
             # Limpieza ultra-segura de referencias (evita caídas si hay celdas vacías)
             df_banco['Ref'] = df_banco['Ref'].fillna('').astype(str).str.strip().str.lstrip('0').str.replace('.0', '', regex=False)
