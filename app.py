@@ -35,24 +35,22 @@ if banco_file and profit_file:
     
     if df_banco is not None and df_profit is not None:
         try:
-            # Estandarización de columnas fijas
-# Estandarización dinámica de columnas según lo que traiga el archivo
-            if len(df_banco.columns) >= 5:
-                df_banco.columns = ['Fecha', 'Ref', 'Desc', 'Deb', 'Cred'] + list(df_banco.columns[5:])
-            else:
-                st.error("El archivo del Banco tiene menos de 5 columnas. Por favor, revísalo.")
-                st.stop()
-                
-            if len(df_profit.columns) == 4:
-                df_profit.columns = ['Fecha', 'Ref', 'Desc', 'Monto']
-                # Si viene consolidado en una columna, duplicamos para simular Debe/Haber y no romper el resto
-                df_profit['Debe'] = df_profit['Monto']
-                df_profit['Haber'] = 0
-            elif len(df_profit.columns) >= 5:
-                df_profit.columns = ['Fecha', 'Ref', 'Desc', 'Debe', 'Haber'] + list(df_profit.columns[5:])
-            else:
-                st.error("El archivo de Profit tiene menos de 4 columnas. Por favor, revísalo.")
-                st.stop()
+            # ASIGNACIÓN ULTRA-ROBUSTA DE COLUMNAS (Evita el Length Mismatch)
+            # Banco: Forzamos nombres a las primeras columnas disponibles
+            nombres_banco = ['Fecha', 'Ref', 'Desc', 'Deb', 'Cred']
+            nuevas_cols_banco = nombres_banco[:len(df_banco.columns)] + list(df_banco.columns[len(nombres_banco):])
+            df_banco.columns = nuevas_cols_banco
+            
+            # Profit: Forzamos nombres a las primeras columnas disponibles
+            nombres_profit = ['Fecha', 'Ref', 'Desc', 'Debe', 'Haber']
+            nuevas_cols_profit = nombres_profit[:len(df_profit.columns)] + list(df_profit.columns[len(nombres_profit):])
+            df_profit.columns = nuevas_cols_profit
+
+            # Aseguramos que existan todas las columnas clave (si no existen, las crea vacías)
+            for col in ['Fecha', 'Ref', 'Desc', 'Deb', 'Cred']:
+                if col not in df_banco.columns: df_banco[col] = 0
+            for col in ['Fecha', 'Ref', 'Desc', 'Debe', 'Haber']:
+                if col not in df_profit.columns: df_profit[col] = 0
             
             # Limpieza exhaustiva de referencias
             df_banco['Ref'] = df_banco['Ref'].astype(str).str.strip().str.lstrip('0').str.replace('.0', '', regex=False)
@@ -77,23 +75,23 @@ if banco_file and profit_file:
             
             with tab1:
                 st.subheader("Transacciones Conciliadas Correctamente")
-                st.dataframe(cruces_df, use_container_width=True)
+                st.dataframe(cruces_df[['Fecha', 'Ref', 'Desc', 'Deb', 'Cred']], use_container_width=True)
                 
             with tab2:
                 st.subheader("Movimientos en Banco pendientes por registrar en Profit")
-                st.dataframe(solo_banco_df, use_container_width=True)
+                st.dataframe(solo_banco_df[['Fecha', 'Ref', 'Desc', 'Deb', 'Cred']], use_container_width=True)
                 
             with tab3:
                 st.subheader("Movimientos en Profit pendientes por pasar por el Banco")
-                st.dataframe(solo_profit_df, use_container_width=True)
+                st.dataframe(solo_profit_df[['Fecha', 'Ref', 'Desc', 'Debe', 'Haber']], use_container_width=True)
             
             # EXPORTACIÓN AUTOMÁTICA A EXCEL
             st.markdown("---")
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                cruces_df.to_excel(writer, sheet_name='Cruces_Exitosos', index=False)
-                solo_banco_df.to_excel(writer, sheet_name='Solo_en_Banco', index=False)
-                solo_profit_df.to_excel(writer, sheet_name='Solo_en_Profit', index=False)
+                cruces_df[['Fecha', 'Ref', 'Desc', 'Deb', 'Cred']].to_excel(writer, sheet_name='Cruces_Exitosos', index=False)
+                solo_banco_df[['Fecha', 'Ref', 'Desc', 'Deb', 'Cred']].to_excel(writer, sheet_name='Solo_en_Banco', index=False)
+                solo_profit_df[['Fecha', 'Ref', 'Desc', 'Debe', 'Haber']].to_excel(writer, sheet_name='Solo_en_Profit', index=False)
             
             st.download_button(
                 label="📥 Descargar Conciliación Completa (Excel)",
@@ -104,4 +102,4 @@ if banco_file and profit_file:
             st.success("¡Conciliación procesada con éxito!")
             
         except Exception as e:
-            st.error(f"Ocurrió un error al procesar las columnas: {e}")
+            st.error(f"Ocurrió un error al procesar los datos: {e}")
