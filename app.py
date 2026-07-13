@@ -3,116 +3,95 @@ import pandas as pd
 import io
 import re
 
-# Configuración de la página web
-st.set_page_config(page_title="Conciliación Bancaria con KPIs", page_icon="📊", layout="wide")
+# Configuración de la página
+st.set_page_config(page_title="Conciliación Bancaria Profesional", page_icon="📊", layout="wide")
 
-# ESTILOS CSS PERSONALIZADOS
-custom_css = """
+# Estilos CSS
+st.markdown("""
     <style>
     .stApp { background-color: #0d1b2a; color: #e0e1dd; }
-    h1, h2, h3 { color: #ffffff !important; font-family: 'Helvetica Neue', sans-serif; }
-    div[data-testid="stMetricValue"] { color: #00b4d8 !important; font-size: 28px !important; font-weight: bold !important; }
-    div[data-testid="stMetricLabel"] { color: #ffffff !important; }
-    .stDownloadButton button { background-color: #0077b6 !important; color: white !important; border-radius: 8px !important; font-weight: bold !important; }
-    .footer { position: fixed; left: 0; bottom: 0; width: 100%; background-color: #0b132b; color: #bcbed8; text-align: center; padding: 10px; font-size: 14px; border-top: 2px solid #0077b6; z-index: 100; }
+    .footer { position: fixed; left: 0; bottom: 0; width: 100%; background-color: #0b132b; color: #bcbed8; text-align: center; padding: 10px; font-size: 14px; border-top: 2px solid #0077b6; }
     </style>
-"""
-st.markdown(custom_css, unsafe_allow_html=True)
-st.markdown('<div class="footer"><p>© 2026 | Sistema Automatizado de Conciliación Bancaria — Creado por Olgleidys Hernández 👩‍💻✨</p></div>', unsafe_allow_html=True)
+""", unsafe_allow_html=True)
 
 st.title("📊 Sistema Automatizado de Conciliación Bancaria")
 
-# Configuración inicial (MANTENIDA)
+# Configuración de usuario
 c1, c2 = st.columns(2)
-with c1: empresa_seleccionada = st.selectbox("🏢 Seleccione la empresa:", ["Thermo Group", "Mystic", "Keravital"])
-bancos_por_empresa = {"Thermo Group": ["Banesco", "Venezuela", "Banplus", "Mercantil", "Banco Fondo Común"], "Mystic": ["Banesco", "Venezuela", "Banplus", "Banplus Mazal"], "Keravital": ["Banesco", "Venezuela"]}
-with c2: banco_seleccionado = st.selectbox("🏦 Seleccione el banco:", bancos_por_empresa[empresa_seleccionada])
-
-p1, p2, p3 = st.columns(3)
-with p1: frecuencia = st.selectbox("⏱️ Frecuencia:", ["Semanal", "Quincenal", "Mensual"])
-with p2: mes = st.selectbox("📆 Mes:", ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"])
-with p3: ano = st.selectbox("📅 Año:", ["2026", "2027", "2025"])
+with c1: empresa = st.selectbox("🏢 Empresa:", ["Thermo Group", "Mystic", "Keravital"])
+with c2: banco = st.selectbox("🏦 Banco:", ["Banesco", "Venezuela", "Banplus", "Mercantil", "Banco Fondo Común"])
 
 col1, col2 = st.columns(2)
-with col1: banco_file = st.file_uploader(f"📥 Estado de Cuenta {banco_seleccionado} (.csv)", type=["csv"])
-with col2: profit_file = st.file_uploader(f"📥 Reporte Profit Plus (.csv)", type=["csv"])
+with col1: banco_file = st.file_uploader("📥 Estado de Cuenta (.csv)", type=["csv"])
+with col2: profit_file = st.file_uploader("📥 Reporte Profit (.csv)", type=["csv"])
 
-# Función de lectura corregida para archivos con ";" y decimales con ","
+# Lógica de procesamiento BLINDADA
 def procesar_csv(file):
-    try: 
-        return pd.read_csv(file, sep=';', decimal=',', encoding="latin-1", engine="python", on_bad_lines="skip")
+    try:
+        # dtype=str impide que Excel corrompa los números largos (notación científica)
+        df = pd.read_csv(file, sep=None, encoding="latin-1", engine="python", on_bad_lines="skip", dtype=str)
+        df.columns = [str(c).strip() for c in df.columns]
+        return df
     except Exception as e:
-        st.error(f"Error al leer el archivo: {e}")
+        st.error(f"Error de lectura: {e}")
         return None
 
-def limpiar_monto(serie):
-    # Ya no necesita regex complejo porque pandas detecta decimales con decimal=','
-    return pd.to_numeric(serie, errors='coerce').fillna(0).round(2)
+def limpiar_referencia(valor):
+    if pd.isna(valor) or valor == '': return ""
+    v = str(valor)
+    # Si detecta notación científica (8.57E+10), la corrige a número real
+    if 'E+' in v:
+        try: return str(int(float(v)))
+        except: pass
+    # Deja solo los números
+    return re.sub(r'[^0-9]', '', v)
+
+def limpiar_monto(valor):
+    # Asegura que el monto sea un número con 2 decimales
+    s = str(valor).replace(',', '.')
+    return pd.to_numeric(re.sub(r'[^0-9.]', '', s), errors='coerce')
 
 if banco_file and profit_file:
-    df_banco = procesar_csv(banco_file)
-    df_profit = procesar_csv(profit_file)
+    df_b = procesar_csv(banco_file)
+    df_p = procesar_csv(profit_file)
     
-    if df_banco is not None and df_profit is not None:
+    if df_b is not None and df_p is not None:
         try:
-            df_banco.columns = [str(c).strip() for c in df_banco.columns]
-            df_profit.columns = [str(c).strip() for c in df_profit.columns]
+            # Seleccionar y renombrar columnas básicas (ajusta según tus nombres reales de columnas)
+            # Asumimos: Fecha, Ref, Desc, Deb, Cred
+            df_b = df_b.iloc[:, :5]; df_b.columns = ['Fecha', 'Ref', 'Desc', 'Deb', 'Cred']
+            df_p = df_p.iloc[:, :5]; df_p.columns = ['Fecha', 'Ref', 'Desc', 'Debe', 'Haber']
             
-            # Ajuste de columnas
-            cols_banco = ['Fecha', 'Ref', 'Desc', 'Deb', 'Cred']
-            cols_profit = ['Fecha', 'Ref', 'Desc', 'Debe', 'Haber']
-            df_banco = df_banco.iloc[:, :5]; df_banco.columns = cols_banco
-            df_profit = df_profit.iloc[:, :5]; df_profit.columns = cols_profit
-            
-            # Limpieza segura de Referencia
-            df_banco['Ref'] = df_banco['Ref'].fillna('').astype(str).str.replace(r'\.0$', '', regex=True).str.strip().str.lstrip('0')
-            df_profit['Ref'] = df_profit['Ref'].fillna('').astype(str).str.replace(r'\.0$', '', regex=True).str.strip().str.lstrip('0')
-            
-            df_banco['Monto_Num'] = limpiar_monto(df_banco['Cred'])
-            df_profit['Monto_Num'] = limpiar_monto(df_profit['Haber'])
+            # Limpieza profunda
+            df_b['Ref_Limpia'] = df_b['Ref'].apply(limpiar_referencia)
+            df_p['Ref_Limpia'] = df_p['Ref'].apply(limpiar_referencia)
+            df_b['Monto_Num'] = df_b['Cred'].apply(limpiar_monto).fillna(0).round(2)
+            df_p['Monto_Num'] = df_p['Haber'].apply(limpiar_monto).fillna(0).round(2)
 
-            # LÓGICA DE CONCILIACIÓN
-            df_banco['Key_Exacta'] = df_banco['Ref'] + "_" + df_banco['Monto_Num'].astype(str)
-            df_profit['Key_Exacta'] = df_profit['Ref'] + "_" + df_profit['Monto_Num'].astype(str)
+            # Creación de llaves para el cruce
+            df_b['Key'] = df_b['Ref_Limpia'] + "_" + df_b['Monto_Num'].astype(str)
+            df_p['Key'] = df_p['Ref_Limpia'] + "_" + df_p['Monto_Num'].astype(str)
             
-            cruces_exactos = df_banco[df_banco['Key_Exacta'].isin(df_profit['Key_Exacta'])]
-            pendientes_banco = df_banco[~df_banco['Key_Exacta'].isin(df_profit['Key_Exacta'])]
-            pendientes_profit = df_profit[~df_profit['Key_Exacta'].isin(df_banco['Key_Exacta'])]
+            # Conciliación
+            cruces = df_b[df_b['Key'].isin(df_p['Key'])]
+            solo_b = df_b[~df_b['Key'].isin(df_p['Key'])]
+            solo_p = df_p[~df_p['Key'].isin(df_b['Key'])]
             
-            # Cruce Secundario
-            pb_valido = pendientes_banco[pendientes_banco['Ref'].str.len() >= 3].copy()
-            pp_valido = pendientes_profit[pendientes_profit['Ref'].str.len() >= 3].copy()
-            pb_valido['Key_Sec'] = pb_valido['Ref'].str[-3:] + "_" + pb_valido['Monto_Num'].astype(str)
-            pp_valido['Key_Sec'] = pp_valido['Ref'].str[-3:] + "_" + pp_valido['Monto_Num'].astype(str)
-            cruces_secundarios = pb_valido[pb_valido['Key_Sec'].isin(pp_valido['Key_Sec'])]
+            # Visualización
+            t1, t2, t3 = st.tabs(["✅ Cruces", "🏦 Solo Banco", "💻 Solo Profit"])
+            t1.dataframe(cruces, use_container_width=True)
+            t2.dataframe(solo_b, use_container_width=True)
+            t3.dataframe(solo_p, use_container_width=True)
             
-            # Resultados finales
-            cruces_finales = pd.concat([cruces_exactos, cruces_secundarios])
-            solo_banco_final = pendientes_banco[~pendientes_banco.index.isin(cruces_secundarios.index)]
-            solo_profit_final = pendientes_profit[~pendientes_profit.index.isin(cruces_secundarios.index)]
-
-            cols_banco_export = ['Fecha', 'Ref', 'Desc', 'Deb', 'Cred']
-            cols_profit_export = ['Fecha', 'Ref', 'Desc', 'Debe', 'Haber']
-
-            # UI de Resultados
-            tab1, tab2, tab3, tab4 = st.tabs(["✅ Cruces Exitosos", "🏦 Solo Banco", "💻 Solo Profit", "📈 KPIs"])
-            with tab1: st.dataframe(cruces_finales[cols_banco_export], use_container_width=True)
-            with tab2: st.dataframe(solo_banco_final[cols_banco_export], use_container_width=True)
-            with tab3: st.dataframe(solo_profit_final[cols_profit_export], use_container_width=True)
-            
-            with tab4:
-                monto_b_pend = solo_banco_final['Monto_Num'].sum()
-                monto_p_pend = solo_profit_final['Monto_Num'].sum()
-                kpi1, kpi2, kpi3 = st.columns(3)
-                kpi1.metric("Tasa de Conciliación", f"{(len(cruces_finales)/(len(df_banco) if len(df_banco)>0 else 1)*100):.1f}%")
-                kpi2.metric("Pendiente Banco", f"{monto_b_pend:,.2f}")
-                kpi3.metric("Tránsito Profit", f"{monto_p_pend:,.2f}")
-
             # Exportación
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                cruces_finales[cols_banco_export].to_excel(writer, sheet_name='Cruces_Exitosos', index=False)
-                solo_banco_final[cols_banco_export].to_excel(writer, sheet_name='Solo_Banco', index=False)
-                solo_profit_final[cols_profit_export].to_excel(writer, sheet_name='Solo_Profit', index=False)
-            st.download_button("📥 Descargar Conciliación Completa", output.getvalue(), f"Conciliacion_{mes}_{ano}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-        except Exception as e: st.error(f"Error en procesamiento: {e}")
+                cruces.to_excel(writer, sheet_name='Cruces', index=False)
+                solo_b.to_excel(writer, sheet_name='Solo_Banco', index=False)
+                solo_p.to_excel(writer, sheet_name='Solo_Profit', index=False)
+            st.download_button("📥 Descargar Conciliación", output.getvalue(), "Conciliacion_Final.xlsx")
+            
+        except Exception as e:
+            st.error(f"Error en la conciliación: {e}")
+
+st.markdown('<div class="footer"><p>© 2026 | Sistema Automatizado de Conciliación</p></div>', unsafe_allow_html=True)
