@@ -42,7 +42,11 @@ def procesar_csv(file):
     except: return None
 
 def limpiar_monto(serie):
-    return pd.to_numeric(serie.astype(str).str.replace('.', '', regex=False).str.replace(',', '.', regex=False).str.strip(), errors='coerce').fillna(0)
+    # Limpieza robusta: quita puntos de miles, cambia coma por punto y redondea
+    return pd.to_numeric(
+        serie.astype(str).str.replace('.', '', regex=False).str.replace(',', '.', regex=False).str.strip(), 
+        errors='coerce'
+    ).fillna(0).round(2)
 
 if banco_file and profit_file:
     df_banco = procesar_csv(banco_file)
@@ -53,7 +57,7 @@ if banco_file and profit_file:
             df_banco.columns = [str(c).strip() for c in df_banco.columns]
             df_profit.columns = [str(c).strip() for c in df_profit.columns]
             
-            # Ajuste de columnas
+            # Ajuste de columnas (toma las primeras 5)
             cols_banco = ['Fecha', 'Ref', 'Desc', 'Deb', 'Cred']
             cols_profit = ['Fecha', 'Ref', 'Desc', 'Debe', 'Haber']
             df_banco = df_banco.iloc[:, :5]; df_banco.columns = cols_banco
@@ -88,7 +92,7 @@ if banco_file and profit_file:
             solo_banco_final = pendientes_banco[~pendientes_banco.index.isin(cruces_secundarios.index)]
             solo_profit_final = pendientes_profit[~pendientes_profit.index.isin(cruces_secundarios.index)]
 
-            # Definición de columnas para visualización y exportación (sin las columnas técnicas)
+            # Definición de columnas para exportación (sin las técnicas)
             cols_banco_export = ['Fecha', 'Ref', 'Desc', 'Deb', 'Cred']
             cols_profit_export = ['Fecha', 'Ref', 'Desc', 'Debe', 'Haber']
 
@@ -106,7 +110,7 @@ if banco_file and profit_file:
                 kpi2.metric("Pendiente Banco", f"{monto_b_pend:,.2f}")
                 kpi3.metric("Tránsito Profit", f"{monto_p_pend:,.2f}")
 
-            # Exportación LIMPIA (sin columnas auxiliares)
+            # Exportación LIMPIA
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
                 cruces_finales[cols_banco_export].to_excel(writer, sheet_name='Cruces_Exitosos', index=False)
