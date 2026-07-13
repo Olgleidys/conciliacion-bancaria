@@ -43,13 +43,8 @@ def procesar_csv(file):
     except: return None
 
 def limpiar_monto(serie):
-    # 1. Convertir a string
-    serie = serie.astype(str)
-    # 2. Reemplazar comas por puntos (decimales)
-    serie = serie.str.replace(',', '.', regex=False)
-    # 3. Eliminar todo lo que NO sea número o punto decimal (limpieza extrema)
+    serie = serie.astype(str).str.replace(',', '.', regex=False)
     serie = serie.apply(lambda x: re.sub(r'[^0-9.]', '', x))
-    # 4. Convertir a numérico y redondear
     return pd.to_numeric(serie, errors='coerce').fillna(0).round(2)
 
 if banco_file and profit_file:
@@ -61,22 +56,19 @@ if banco_file and profit_file:
             df_banco.columns = [str(c).strip() for c in df_banco.columns]
             df_profit.columns = [str(c).strip() for c in df_profit.columns]
             
-            # Ajuste de columnas
             cols_banco = ['Fecha', 'Ref', 'Desc', 'Deb', 'Cred']
             cols_profit = ['Fecha', 'Ref', 'Desc', 'Debe', 'Haber']
             df_banco = df_banco.iloc[:, :5]; df_banco.columns = cols_banco
             df_profit = df_profit.iloc[:, :5]; df_profit.columns = cols_profit
             
-            # Limpieza básica de Referencia
-            df_banco['Ref'] = df_banco['Ref'].fillna('').astype(str).str.strip().str.lstrip('0')
-            df_profit['Ref'] = df_profit['Ref'].fillna('').astype(str).str.strip().str.lstrip('0')
+            # Limpieza reforzada de Referencia
+            df_banco['Ref'] = df_banco['Ref'].fillna('').astype(str).str.replace(r'\.0$', '', regex=True).str.strip().str.lstrip('0')
+            df_profit['Ref'] = df_profit['Ref'].fillna('').astype(str).str.replace(r'\.0$', '', regex=True).str.strip().str.lstrip('0')
             
-            # Limpieza robusta de Montos
             df_banco['Monto_Num'] = limpiar_monto(df_banco['Cred'])
             df_profit['Monto_Num'] = limpiar_monto(df_profit['Haber'])
 
             # LÓGICA DE CONCILIACIÓN
-            # 1. Cruce Exacto
             df_banco['Key_Exacta'] = df_banco['Ref'] + "_" + df_banco['Monto_Num'].astype(str)
             df_profit['Key_Exacta'] = df_profit['Ref'] + "_" + df_profit['Monto_Num'].astype(str)
             
@@ -84,7 +76,7 @@ if banco_file and profit_file:
             pendientes_banco = df_banco[~df_banco['Key_Exacta'].isin(df_profit['Key_Exacta'])]
             pendientes_profit = df_profit[~df_profit['Key_Exacta'].isin(df_banco['Key_Exacta'])]
             
-            # 2. Cruce Secundario (Ref >= 3 dígitos + Monto exacto)
+            # Cruce Secundario (Ref >= 3 dígitos + Monto exacto)
             pendientes_banco_valido = pendientes_banco[pendientes_banco['Ref'].str.len() >= 3].copy()
             pendientes_profit_valido = pendientes_profit[pendientes_profit['Ref'].str.len() >= 3].copy()
             
@@ -115,7 +107,7 @@ if banco_file and profit_file:
                 kpi2.metric("Pendiente Banco", f"{monto_b_pend:,.2f}")
                 kpi3.metric("Tránsito Profit", f"{monto_p_pend:,.2f}")
 
-            # Exportación
+            # Exportación LIMPIA
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
                 cruces_finales[cols_banco_export].to_excel(writer, sheet_name='Cruces_Exitosos', index=False)
