@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import io
 
-# Configuración de la página web corporativa
+# Configuración de la página web
 st.set_page_config(page_title="Conciliación Bancaria con KPIs", page_icon="📊", layout="wide")
 
 # ESTILOS CSS PERSONALIZADOS
@@ -83,16 +83,20 @@ if banco_file and profit_file:
             
             cruces_secundarios = pendientes_banco_valido[pendientes_banco_valido['Key_Sec'].isin(pendientes_profit_valido['Key_Sec'])]
             
-            # Resultados finales
+            # Resultados finales consolidados
             cruces_finales = pd.concat([cruces_exactos, cruces_secundarios])
             solo_banco_final = pendientes_banco[~pendientes_banco.index.isin(cruces_secundarios.index)]
             solo_profit_final = pendientes_profit[~pendientes_profit.index.isin(cruces_secundarios.index)]
 
-            # UI de Resultados
+            # Definición de columnas para visualización y exportación (sin las columnas técnicas)
+            cols_banco_export = ['Fecha', 'Ref', 'Desc', 'Deb', 'Cred']
+            cols_profit_export = ['Fecha', 'Ref', 'Desc', 'Debe', 'Haber']
+
+            # UI de Resultados (limpios)
             tab1, tab2, tab3, tab4 = st.tabs(["✅ Cruces Exitosos", "🏦 Solo Banco", "💻 Solo Profit", "📈 KPIs"])
-            with tab1: st.dataframe(cruces_finales[['Fecha', 'Ref', 'Desc', 'Deb', 'Cred']], use_container_width=True)
-            with tab2: st.dataframe(solo_banco_final[['Fecha', 'Ref', 'Desc', 'Deb', 'Cred']], use_container_width=True)
-            with tab3: st.dataframe(solo_profit_final[['Fecha', 'Ref', 'Desc', 'Debe', 'Haber']], use_container_width=True)
+            with tab1: st.dataframe(cruces_finales[cols_banco_export], use_container_width=True)
+            with tab2: st.dataframe(solo_banco_final[cols_banco_export], use_container_width=True)
+            with tab3: st.dataframe(solo_profit_final[cols_profit_export], use_container_width=True)
             
             with tab4:
                 monto_b_pend = solo_banco_final['Monto_Num'].sum()
@@ -102,11 +106,12 @@ if banco_file and profit_file:
                 kpi2.metric("Pendiente Banco", f"{monto_b_pend:,.2f}")
                 kpi3.metric("Tránsito Profit", f"{monto_p_pend:,.2f}")
 
-            # Exportación
+            # Exportación LIMPIA (sin columnas auxiliares)
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                cruces_finales.to_excel(writer, sheet_name='Cruces_Exitosos', index=False)
-                solo_banco_final.to_excel(writer, sheet_name='Solo_Banco', index=False)
-                solo_profit_final.to_excel(writer, sheet_name='Solo_Profit', index=False)
+                cruces_finales[cols_banco_export].to_excel(writer, sheet_name='Cruces_Exitosos', index=False)
+                solo_banco_final[cols_banco_export].to_excel(writer, sheet_name='Solo_Banco', index=False)
+                solo_profit_final[cols_profit_export].to_excel(writer, sheet_name='Solo_Profit', index=False)
+            
             st.download_button("📥 Descargar Conciliación Completa", output.getvalue(), f"Conciliacion_{mes}_{ano}.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
         except Exception as e: st.error(f"Error procesando datos: {e}")
