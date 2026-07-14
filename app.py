@@ -28,7 +28,7 @@ with st.expander("📖 Instrucciones de uso"):
 # Configuración (Período y Empresa)
 c1, c2 = st.columns(2)
 empresa = c1.selectbox("🏢 Empresa:", ["Thermo Group", "Mystic", "Keravital"])
-banco = c2.selectbox("🏦 Banco:", ["Banesco", "Venezuela", "Banplus", "Mercantil", "Banco Fondo Común"])
+banco = c2.selectbox("🏦 Banco:", ["Banesco", "Venezuela", "Banplus", "Banplus Mazal", "Mercantil", "Banco Fondo Común"])
 
 p1, p2, p3 = st.columns(3)
 frecuencia = p1.selectbox("⏱️ Frecuencia:", ["Semanal", "Quincenal", "Mensual"])
