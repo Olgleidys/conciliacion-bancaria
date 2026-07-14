@@ -17,7 +17,7 @@ st.markdown(custom_css, unsafe_allow_html=True)
 
 st.title("📊 Sistema Automatizado de Conciliación Bancaria")
 
-# Configuración
+# Configuración (Período y Empresa)
 c1, c2 = st.columns(2)
 empresa = c1.selectbox("🏢 Empresa:", ["Thermo Group", "Mystic", "Keravital"])
 banco = c2.selectbox("🏦 Banco:", ["Banesco", "Venezuela", "Banplus", "Mercantil", "Banco Fondo Común"])
@@ -31,21 +31,61 @@ banco_file = st.file_uploader(f"📥 Estado de Cuenta {banco} (.csv)", type=["cs
 profit_file = st.file_uploader("📥 Reporte de Profit Plus (.csv)", type=["csv"])
 
 def limpiar_monto(serie):
-    return pd.to_numeric(serie.astype(str).str.replace('.', '', regex=False).str.replace(',', '.', regex=False).str.strip(), errors='coerce').fillna(0)
+    # Limpieza robusta para cualquier formato numérico
+    return pd.to_numeric(serie.astype(str).str.replace(r'[^0-9,.-]', '', regex=True).str.replace('.', '', regex=False).str.replace(',', '.', regex=False), errors='coerce').fillna(0)
 
 if banco_file and profit_file:
-    # Leer archivos conservando nombres originales
     df_b = pd.read_csv(banco_file, sep=None, encoding="latin-1", engine="python", on_bad_lines="skip")
     df_p = pd.read_csv(profit_file, sep=None, encoding="latin-1", engine="python", on_bad_lines="skip")
     
-    # Conservar solo las primeras 5 columnas (Fecha, Ref, Desc, Debe, Haber)
-    df_b_proc = df_b.iloc[:, :5].copy()
-    df_p_proc = df_p.iloc[:, :5].copy()
+    # 1. Conservar nombres originales y filtrar columnas
+    df_b_final = df_b.iloc[:, :5].copy()
+    df_p_final = df_p.iloc[:, :5].copy()
     
-    # Crear dataframes para lógica de conciliación (con nombres estandarizados internos)
-    df_b_logic = df_b_proc.copy()
-    df_p_logic = df_p_proc.copy()
+    # 2. Copias para lógica (Estandarización)
+    df_b_log = df_b_final.copy()
+    df_p_log = df_p_final.copy()
     
-    for df in [df_b_logic, df_p_logic]:
+    for df in [df_b_log, df_p_log]:
         cols = list(df.columns)
-        #
+        df.rename(columns={cols[0]: 'Fecha', cols[1]: 'Ref', cols[2]: 'Desc', cols[3]: 'M1', cols[4]: 'M2'}, inplace=True)
+        df['Ref'] = df['Ref'].fillna('').astype(str).str.strip()
+        df['Monto_Limpio'] = limpiar_monto(df['M1']) + limpiar_monto(df['M2'])
+        df['Ref3'] = df['Ref'].str[-3:]
+
+    # 3. Conciliación
+    df_b_final['Estado'] = 'Pendiente'
+    df_p_final['Estado'] = 'Pendiente'
+    
+    # Match 100%
+    matches = pd.merge(df_b_log.reset_index(), df_p_log.reset_index(), on=['Ref', 'Monto_Limpio'], suffixes=('_B', '_P'))
+    df_b_final.loc[matches['index_B'], 'Estado'] = 'Conciliado'
+    df_p_final.loc[matches['index_P'], 'Estado'] = 'Conciliado'
+
+    # Match últimos 3
+    pend_b = df_b_log[df_b_final['Estado'] == 'Pendiente']
+    pend_p = df_p_log[df_p_final['Estado'] == 'Pendiente']
+    matches3 = pd.merge(pend_b.reset_index(), pend_p.reset_index(), on=['Ref3', 'Monto_Limpio'], suffixes=('_B', '_P'))
+    
+    df_b_final.loc[matches3['index_B'], 'Estado'] = 'Conciliado'
+    df_p_final.loc[matches3['index_P'], 'Estado'] = 'Conciliado'
+
+    # 4. Mostrar Resultados
+    full_df = pd.concat([df_b_final.assign(Origen='Banco'), df_p_final.assign(Origen='Profit')])
+    tab1, tab2, tab3 = st.tabs(["✅ Todos los movimientos", "🏦 Pendientes Banco", "💻 Pendientes Profit"])
+    
+    with tab1: st.dataframe(full_df, use_container_width=True)
+    with tab2: st.dataframe(df_b_final[df_b_final['Estado'] == 'Pendiente'], use_container_width=True)
+    with tab3: st.dataframe(df_p_final[df_p_final['Estado'] == 'Pendiente'], use_container_width=True)
+
+    # 5. Descarga Excel con pestañas
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        full_df.to_excel(writer, sheet_name='Todos_Movimientos', index=False)
+        df_b_final[df_b_final['Estado'] == 'Pendiente'].to_excel(writer, sheet_name='Pendientes_Banco', index=False)
+        df_p_final[df_p_final['Estado'] == 'Pendiente'].to_excel(writer, sheet_name='Pendientes_Profit', index=False)
+        df_b_final[df_b_final['Estado'] == 'Conciliado'].to_excel(writer, sheet_name='Conciliados', index=False)
+        
+    st.download_button("📥 Descargar conciliación completa (Excel)", data=output.getvalue(), file_name="Conciliacion_Completa.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+st.markdown('<div class="footer"><p>© 2026 | Sistema Automatizado de Conciliación Bancaria — Creado por Lic. Olgleidys Hernández ✨</p></div>', unsafe_allow_html=True)
