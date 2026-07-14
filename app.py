@@ -87,4 +87,4 @@ if banco_file and profit_file:
         pd.concat([df_b.assign(Origen='Banco'), df_p.assign(Origen='Profit')]).to_excel(writer, sheet_name='Todos_Movimientos', index=False)
     st.download_button("📥 Descargar Conciliación Completa (Con Estados)", data=output.getvalue(), file_name="Conciliacion_Completa.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
-st.markdown('<div class="footer"><p>© 2026 | Sistema Automatizado de Conciliación Bancaria — Creado por Olgleidys Hernández ✨</p></div>', unsafe_allow_html=True)
+st.markdown('<div class="footer"><p>© 2026 | Sistema Automatizado de Conciliación Bancaria — Creado por Lic. Olgleidys Hernández ✨</p></div>', unsafe_allow_html=True)
