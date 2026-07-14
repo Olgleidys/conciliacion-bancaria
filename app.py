@@ -1,13 +1,16 @@
 import streamlit as st
 import pandas as pd
+import io
 import re
 
-# 1. CONFIGURACIÓN Y ESTILO (Fondo Oscuro)
+# 1. CONFIGURACIÓN Y ESTILO (Diseño original y profesional)
 st.set_page_config(page_title="Conciliación Bancaria", layout="wide")
 st.markdown("""
     <style>
     .stApp { background-color: #0d1b2a; color: #e0e1dd; }
+    h1, h2, h3 { color: #ffffff !important; }
     div[data-testid="stMetricValue"] { color: #00b4d8 !important; }
+    .stDownloadButton button { background-color: #0077b6 !important; color: white !important; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -31,11 +34,8 @@ with col2: profit_file = st.file_uploader("📥 Reporte Profit (.csv)", type=["c
 # Lógica de procesamiento
 def procesar(file):
     df = pd.read_csv(file, sep=';', encoding="latin-1", dtype=str)
-    # Buscamos la columna de referencia (referencia)
     cols_ref = [c for c in df.columns if 'referencia' in c.lower()]
     ref_col = cols_ref[0] if cols_ref else df.columns[1]
-    
-    # Nos aseguramos de mantener solo las 5 columnas originales
     df = df[[df.columns[0], ref_col, df.columns[2], df.columns[3], df.columns[4]]]
     df.columns = ['Fecha', 'Ref', 'Desc', 'Deb', 'Cred']
     return df
@@ -54,19 +54,28 @@ if banco_file and profit_file:
     df_b['Ref_Clean'] = df_b['Ref'].apply(limpiar)
     df_p['Ref_Clean'] = df_p['Ref'].apply(limpiar)
     df_b['Monto'] = pd.to_numeric(df_b['Cred'].str.replace(',', '.'), errors='coerce').fillna(0)
-    df_p['Monto'] = pd.to_numeric(df_p['Cred'].str.replace(',', '.'), errors='coerce').fillna(0) # Ajustado a Cred/Haber
+    df_p['Monto'] = pd.to_numeric(df_p['Cred'].str.replace(',', '.'), errors='coerce').fillna(0)
     
     df_b['Key'] = df_b['Ref_Clean'] + "_" + df_b['Monto'].astype(str)
     df_p['Key'] = df_p['Ref_Clean'] + "_" + df_p['Monto'].astype(str)
     
-    cruces = df_b[df_b['Key'].isin(df_p['Key'])]
-    solo_b = df_b[~df_b['Key'].isin(df_p['Key'])]
-    solo_p = df_p[~df_p['Key'].isin(df_b['Key'])]
+    cruces = df_b[df_b['Key'].isin(df_p['Key'])].copy()
+    solo_b = df_b[~df_b['Key'].isin(df_p['Key'])].copy()
+    solo_p = df_p[~df_p['Key'].isin(df_b['Key'])].copy()
 
-    # 5. MOSTRAR SOLO COLUMNAS ORIGINALES
+    # Mostrar tablas limpias
     cols_a_mostrar = ['Fecha', 'Ref', 'Desc', 'Deb', 'Cred']
     
     t1, t2, t3 = st.tabs(["✅ Cruces Exitosos", "🏦 Solo Banco", "💻 Solo Profit"])
     t1.dataframe(cruces[cols_a_mostrar], use_container_width=True)
     t2.dataframe(solo_b[cols_a_mostrar], use_container_width=True)
     t3.dataframe(solo_p[cols_a_mostrar], use_container_width=True)
+
+    # 4. BOTÓN DE DESCARGA (Recuperado)
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        cruces[cols_a_mostrar].to_excel(writer, sheet_name='Cruces_Exitosos', index=False)
+        solo_b[cols_a_mostrar].to_excel(writer, sheet_name='Solo_Banco', index=False)
+        solo_p[cols_a_mostrar].to_excel(writer, sheet_name='Solo_Profit', index=False)
+    
+    st.download_button("📥 Descargar Conciliación Completa (.xlsx)", data=output.getvalue(), file_name="Conciliacion_Final.xlsx")
