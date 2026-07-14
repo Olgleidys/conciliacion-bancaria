@@ -16,65 +16,67 @@ custom_css = """
 """
 st.markdown(custom_css, unsafe_allow_html=True)
 
-# --- HEADER Y CONFIGURACIÓN ---
 st.title("📊 Sistema Automatizado de Conciliación Bancaria")
+
+# Configuración (Mantenida)
 c1, c2 = st.columns(2)
 empresa = c1.selectbox("🏢 Seleccione la empresa:", ["Thermo Group", "Mystic", "Keravital"])
-bancos = {"Thermo Group": ["Banesco", "Venezuela", "Banplus", "Mercantil", "Banco Fondo Común"], "Mystic": ["Banesco", "Venezuela", "Banplus", "Banplus Mazal"], "Keravital": ["Banesco", "Venezuela"]}
-banco = c2.selectbox("🏦 Seleccione el banco:", bancos[empresa])
+banco = c2.selectbox("🏦 Seleccione el banco:", ["Banesco", "Venezuela", "Banplus", "Mercantil", "Banco Fondo Común"])
 
 p1, p2, p3 = st.columns(3)
 frecuencia = p1.selectbox("⏱️ Frecuencia:", ["Semanal", "Quincenal", "Mensual"])
 mes = p2.selectbox("📆 Mes:", ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"])
 ano = p3.selectbox("📅 Año:", ["2026", "2027", "2025"])
 
-# --- CARGA DE ARCHIVOS ---
-b1, b2 = st.columns(2)
-banco_file = b1.file_uploader(f"📥 Estado de Cuenta {banco}", type=["csv"])
-profit_file = b2.file_uploader("📥 Reporte Profit Plus", type=["csv"])
+banco_file = st.file_uploader(f"📥 Estado de Cuenta {banco} (.csv)", type=["csv"])
+profit_file = st.file_uploader("📥 Reporte de Profit Plus (.csv)", type=["csv"])
 
 def limpiar_monto(serie):
     return pd.to_numeric(serie.astype(str).str.replace('.', '', regex=False).str.replace(',', '.', regex=False).str.strip(), errors='coerce').fillna(0)
 
-def procesar_df(file, es_banco):
-    df = pd.read_csv(file, sep=None, encoding="latin-1", engine="python", on_bad_lines="skip")
-    df.columns = [str(c).strip() for c in df.columns]
-    if 'Referencia' in df.columns: df.rename(columns={'Referencia': 'Ref'}, inplace=True)
-    
-    # Estandarizar nombres (ajustado a tu estructura)
-    cols = list(df.columns)
-    df = df.rename(columns={cols[0]: 'Fecha', cols[1]: 'Ref', cols[2]: 'Desc', cols[3]: 'M1', cols[4]: 'M2'})
-    df['Ref'] = df['Ref'].fillna('').astype(str).str.strip().str.lstrip('0')
-    df['Monto_Limpio'] = limpiar_monto(df['M1']) + limpiar_monto(df['M2'])
-    return df
-
 if banco_file and profit_file:
-    df_b = procesar_df(banco_file, True)
-    df_p = procesar_df(profit_file, False)
-
-    # Lógica: 1. Cruce Exacto | 2. Cruce últimos 3 dígitos
-    cruce_1 = pd.merge(df_b, df_p, on=['Ref', 'Monto_Limpio'], suffixes=('_B', '_P'))
+    # Cargar y preparar
+    df_b = pd.read_csv(banco_file, sep=None, encoding="latin-1", engine="python", on_bad_lines="skip")
+    df_p = pd.read_csv(profit_file, sep=None, encoding="latin-1", engine="python", on_bad_lines="skip")
     
+    # Estandarizar nombre Referencia a Ref
+    for df in [df_b, df_p]:
+        df.columns = [str(c).strip() for c in df.columns]
+        if 'Referencia' in df.columns: df.rename(columns={'Referencia': 'Ref'}, inplace=True)
+        # Asegurar columnas (asumimos las 5 primeras de tu archivo)
+        cols = list(df.columns)
+        df.rename(columns={cols[0]: 'Fecha', cols[1]: 'Ref', cols[2]: 'Desc', cols[3]: 'Deb', cols[4]: 'Cred'}, inplace=True)
+        df['Ref'] = df['Ref'].fillna('').astype(str).str.strip()
+        df['Monto_Limpio'] = limpiar_monto(df['Deb']) + limpiar_monto(df['Cred'])
+
+    # LÓGICA SIN ELIMINAR FILAS
+    # Marcamos estados iniciales
+    df_b['Estado'] = 'Pendiente'
+    df_p['Estado'] = 'Pendiente'
+    
+    # Cruce 1: 100%
+    merge_1 = pd.merge(df_b, df_p, on=['Ref', 'Monto_Limpio'], suffixes=('_B', '_P'))
+    
+    # Cruce 2: Últimos 3 dígitos
     df_b['Ref3'] = df_b['Ref'].str[-3:]
     df_p['Ref3'] = df_p['Ref'].str[-3:]
-    
-    rest_b = df_b[~df_b.index.isin(cruce_1.index)]
-    rest_p = df_p[~df_p.index.isin(cruce_1.index)]
-    cruce_2 = pd.merge(rest_b, rest_p, on=['Ref3', 'Monto_Limpio'], suffixes=('_B', '_P'))
-    
-    cruces_final = pd.concat([cruce_1, cruce_2])
-    solo_b = df_b[~df_b.index.isin(cruces_final.index)]
-    solo_p = df_p[~df_p.index.isin(cruces_final.index)]
+    merge_2 = pd.merge(df_b[df_b['Estado']=='Pendiente'], df_p[df_p['Estado']=='Pendiente'], on=['Ref3', 'Monto_Limpio'], suffixes=('_B', '_P'))
 
-    # --- PESTAÑAS Y RESULTADOS ---
-    tab1, tab2, tab3, tab4 = st.tabs(["✅ Cruces Exitosos", "🏦 Pendiente Banco", "💻 Pendiente Profit", "📈 Indicadores"])
+    # Visualización y Descarga
+    tab1, tab2, tab3 = st.tabs(["✅ Conciliados", "🏦 Solo Banco", "💻 Solo Profit"])
     
-    with tab1: st.dataframe(cruces_final[['Fecha_B', 'Ref_B', 'Desc_B', 'M1_B', 'M2_B']], use_container_width=True)
-    with tab2: st.dataframe(solo_b[['Fecha', 'Ref', 'Desc', 'M1', 'M2']], use_container_width=True)
-    with tab3: st.dataframe(solo_p[['Fecha', 'Ref', 'Desc', 'M1', 'M2']], use_container_width=True)
+    # Mostrar resultados
+    with tab1: st.dataframe(pd.concat([merge_1, merge_2]), use_container_width=True)
+    with tab2: st.dataframe(df_b, use_container_width=True) # Muestra todo el original
+    with tab3: st.dataframe(df_p, use_container_width=True)
     
-    with tab4:
-        st.metric("🎯 Tasa de Conciliación", f"{(len(cruces_final)/len(df_b)*100):.1f}%")
-        st.bar_chart(pd.DataFrame({'Categoría': ['Conciliados', 'Solo Banco', 'Solo Profit'], 'Movimientos': [len(cruces_final), len(solo_b), len(solo_p)]}).set_index('Categoría'))
+    # EXPORTACIÓN A EXCEL (Corregida)
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        pd.concat([merge_1, merge_2]).to_excel(writer, sheet_name='Conciliados', index=False)
+        df_b.to_excel(writer, sheet_name='Todo_Banco', index=False)
+        df_p.to_excel(writer, sheet_name='Todo_Profit', index=False)
+    
+    st.download_button("📥 Descargar Conciliación Completa (Excel)", data=output.getvalue(), file_name="Conciliacion_Completa.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 st.markdown('<div class="footer"><p>© 2026 | Sistema Automatizado de Conciliación Bancaria — Creado por Olgleidys Hernández 👩‍💻✨</p></div>', unsafe_allow_html=True)
