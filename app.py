@@ -16,6 +16,15 @@ st.markdown(custom_css, unsafe_allow_html=True)
 
 st.title("📊 Sistema Automatizado de Conciliación Bancaria")
 
+# Instrucciones de uso
+with st.expander("📖 Instrucciones de uso"):
+    st.write("""
+    1. **Selecciona** la empresa, banco y periodo correspondiente.
+    2. **Carga** el archivo CSV del estado de cuenta bancario y el reporte de Profit Plus.
+    3. **Visualiza** los resultados en las pestañas (Todos, Pendientes Banco, Pendientes Profit).
+    4. **Descarga** el archivo Excel final haciendo clic en el botón inferior.
+    """)
+
 # Configuración (Período y Empresa)
 c1, c2 = st.columns(2)
 empresa = c1.selectbox("🏢 Empresa:", ["Thermo Group", "Mystic", "Keravital"])
@@ -37,7 +46,6 @@ if banco_file and profit_file:
     df_p = pd.read_csv(profit_file, sep=None, encoding="latin-1", engine="python", on_bad_lines="skip")
     
     # --- PROCESAMIENTO ---
-    # Seleccionamos solo las 5 columnas iniciales y aseguramos que 'Referencia' sea string para el merge
     df_b_proc = df_b.iloc[:, :5].copy()
     df_p_proc = df_p.iloc[:, :5].copy()
     
@@ -45,7 +53,6 @@ if banco_file and profit_file:
     df_b_proc.columns = nombres_cols
     df_p_proc.columns = nombres_cols
     
-    # Estandarizar tipos de datos para evitar el ValueError
     for df in [df_b_proc, df_p_proc]:
         df['Referencia'] = df['Referencia'].astype(str).str.strip()
         df['Monto_Limpio'] = limpiar_monto(df['Debito']) + limpiar_monto(df['Credito'])
@@ -54,12 +61,10 @@ if banco_file and profit_file:
     df_b_proc['Estado'] = 'Pendiente'
     df_p_proc['Estado'] = 'Pendiente'
     
-    # Lógica de conciliación
     matches = pd.merge(df_b_proc.reset_index(), df_p_proc.reset_index(), on=['Referencia', 'Monto_Limpio'], suffixes=('_B', '_P'))
     df_b_proc.loc[matches['index_B'], 'Estado'] = 'Conciliado'
     df_p_proc.loc[matches['index_P'], 'Estado'] = 'Conciliado'
 
-    # Conciliación por últimos 3 dígitos
     pend_b = df_b_proc[df_b_proc['Estado'] == 'Pendiente']
     pend_p = df_p_proc[df_p_proc['Estado'] == 'Pendiente']
     matches3 = pd.merge(pend_b.reset_index(), pend_p.reset_index(), on=['Ref3', 'Monto_Limpio'], suffixes=('_B', '_P'))
@@ -68,11 +73,10 @@ if banco_file and profit_file:
     df_p_proc.loc[matches3['index_P'], 'Estado'] = 'Conciliado'
 
     # --- VISUALIZACIÓN ---
-    # Unimos y nos quedamos solo con las columnas necesarias
+    st.subheader("Todos los movimientos conciliados")
     full_df = pd.concat([df_b_proc.assign(Origen='Banco'), df_p_proc.assign(Origen='Profit')])
     cols_a_mostrar = ['Fecha', 'Referencia', 'Descripción', 'Debito', 'Credito', 'Estado', 'Origen']
     
-    st.subheader("Todos los movimientos conciliados")
     tab1, tab2, tab3 = st.tabs(["✅ Todos los movimientos", "🏦 Pendientes Banco", "💻 Pendientes Profit"])
     with tab1: st.dataframe(full_df[cols_a_mostrar], use_container_width=True)
     with tab2: st.dataframe(df_b_proc[df_b_proc['Estado'] == 'Pendiente'][cols_a_mostrar[:-1]], use_container_width=True)
