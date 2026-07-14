@@ -37,49 +37,51 @@ if banco_file and profit_file:
     df_p = pd.read_csv(profit_file, sep=None, encoding="latin-1", engine="python", on_bad_lines="skip")
     
     # --- PROCESAMIENTO ---
-    # Trabajamos con copias para no afectar la estructura original si necesitas los datos después
+    # Seleccionamos solo las 5 columnas iniciales y aseguramos que 'Referencia' sea string para el merge
     df_b_proc = df_b.iloc[:, :5].copy()
     df_p_proc = df_p.iloc[:, :5].copy()
     
-    # Nombres de columnas deseados
     nombres_cols = ['Fecha', 'Referencia', 'Descripción', 'Debito', 'Credito']
     df_b_proc.columns = nombres_cols
     df_p_proc.columns = nombres_cols
     
-    # Lógica de conciliación interna
-    df_b_log = df_b_proc.copy()
-    df_p_log = df_p_proc.copy()
-    for df in [df_b_log, df_p_log]:
+    # Estandarizar tipos de datos para evitar el ValueError
+    for df in [df_b_proc, df_p_proc]:
+        df['Referencia'] = df['Referencia'].astype(str).str.strip()
         df['Monto_Limpio'] = limpiar_monto(df['Debito']) + limpiar_monto(df['Credito'])
-        df['Ref3'] = df['Referencia'].astype(str).str.strip().str[-3:]
+        df['Ref3'] = df['Referencia'].str[-3:]
 
     df_b_proc['Estado'] = 'Pendiente'
     df_p_proc['Estado'] = 'Pendiente'
     
-    matches = pd.merge(df_b_log.reset_index(), df_p_log.reset_index(), on=['Referencia', 'Monto_Limpio'], suffixes=('_B', '_P'))
+    # Lógica de conciliación
+    matches = pd.merge(df_b_proc.reset_index(), df_p_proc.reset_index(), on=['Referencia', 'Monto_Limpio'], suffixes=('_B', '_P'))
     df_b_proc.loc[matches['index_B'], 'Estado'] = 'Conciliado'
     df_p_proc.loc[matches['index_P'], 'Estado'] = 'Conciliado'
 
-    pend_b = df_b_log[df_b_proc['Estado'] == 'Pendiente']
-    pend_p = df_p_log[df_p_proc['Estado'] == 'Pendiente']
+    # Conciliación por últimos 3 dígitos
+    pend_b = df_b_proc[df_b_proc['Estado'] == 'Pendiente']
+    pend_p = df_p_proc[df_p_proc['Estado'] == 'Pendiente']
     matches3 = pd.merge(pend_b.reset_index(), pend_p.reset_index(), on=['Ref3', 'Monto_Limpio'], suffixes=('_B', '_P'))
     
     df_b_proc.loc[matches3['index_B'], 'Estado'] = 'Conciliado'
     df_p_proc.loc[matches3['index_P'], 'Estado'] = 'Conciliado'
 
     # --- VISUALIZACIÓN ---
-    st.subheader("Todos los movimientos conciliados")
+    # Unimos y nos quedamos solo con las columnas necesarias
     full_df = pd.concat([df_b_proc.assign(Origen='Banco'), df_p_proc.assign(Origen='Profit')])
+    cols_a_mostrar = ['Fecha', 'Referencia', 'Descripción', 'Debito', 'Credito', 'Estado', 'Origen']
     
+    st.subheader("Todos los movimientos conciliados")
     tab1, tab2, tab3 = st.tabs(["✅ Todos los movimientos", "🏦 Pendientes Banco", "💻 Pendientes Profit"])
-    with tab1: st.dataframe(full_df, use_container_width=True)
-    with tab2: st.dataframe(df_b_proc[df_b_proc['Estado'] == 'Pendiente'], use_container_width=True)
-    with tab3: st.dataframe(df_p_proc[df_p_proc['Estado'] == 'Pendiente'], use_container_width=True)
+    with tab1: st.dataframe(full_df[cols_a_mostrar], use_container_width=True)
+    with tab2: st.dataframe(df_b_proc[df_b_proc['Estado'] == 'Pendiente'][cols_a_mostrar[:-1]], use_container_width=True)
+    with tab3: st.dataframe(df_p_proc[df_p_proc['Estado'] == 'Pendiente'][cols_a_mostrar[:-1]], use_container_width=True)
 
     # --- DESCARGA ---
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        full_df.to_excel(writer, sheet_name='Todos_Movimientos', index=False)
+        full_df[cols_a_mostrar].to_excel(writer, sheet_name='Todos_Movimientos', index=False)
         
     st.download_button("📥 Descargar conciliación completa (Excel)", data=output.getvalue(), file_name="Conciliacion_Completa.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
