@@ -86,4 +86,4 @@ if banco_file and profit_file:
     
     st.download_button("📥 Descargar Conciliación (Excel)", data=output.getvalue(), file_name="Conciliacion_Final.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
-st.markdown('<div class="footer"><p>© 2026 | Sistema Automatizado de Conciliación Bancaria — Creado por Olgleidys Hernández 👩‍💻✨</p></div>', unsafe_allow_html=True)
+st.markdown('<div class="footer"><p>© 2026 | Sistema Automatizado de Conciliación Bancaria — Creado por Olgleidys Hernández ✨</p></div>', unsafe_allow_html=True)
