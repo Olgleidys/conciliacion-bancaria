@@ -3,7 +3,7 @@ import pandas as pd
 import io
 import re
 
-# 1. CONFIGURACIÓN Y ESTILO (Mantenido igual)
+# 1. CONFIGURACIÓN Y ESTILO
 st.set_page_config(page_title="Conciliación Bancaria", layout="wide")
 st.markdown("""
     <style>
@@ -16,7 +16,7 @@ st.markdown("""
 
 st.title("📊 Sistema Automatizado de Conciliación Bancaria")
 
-# Configuración (Mantenida igual)
+# Configuración
 c1, c2 = st.columns(2)
 with c1: empresa = st.selectbox("🏢 Empresa:", ["Thermo Group", "Mystic", "Keravital"])
 with c2: banco = st.selectbox("🏦 Banco:", ["Banesco", "Venezuela", "Banplus", "Mercantil", "Banco Fondo Común"])
@@ -50,27 +50,35 @@ if banco_file and profit_file:
     df_b = procesar(banco_file)
     df_p = procesar(profit_file)
     
-    # Limpieza y preparación
+    # Limpieza básica
     df_b['Ref_Clean'] = df_b['Ref'].apply(limpiar)
     df_p['Ref_Clean'] = df_p['Ref'].apply(limpiar)
+    
+    # Filtro: Descartar referencias < 3 dígitos antes de procesar
+    df_b = df_b[df_b['Ref_Clean'].str.len() >= 3].copy()
+    df_p = df_p[df_p['Ref_Clean'].str.len() >= 3].copy()
+    
     df_b['Ref_3D'] = df_b['Ref_Clean'].str[-3:]
     df_p['Ref_3D'] = df_p['Ref_Clean'].str[-3:]
     
     df_b['Monto'] = pd.to_numeric(df_b['Cred'].str.replace(',', '.'), errors='coerce').fillna(0)
     df_p['Monto'] = pd.to_numeric(df_p['Cred'].str.replace(',', '.'), errors='coerce').fillna(0)
     
-    # --- ETAPA 1: CRUCE 100% IGUAL ---
+    # --- PASO 1: Cruce 100% (Ref completa + Monto) ---
     df_b['Key1'] = df_b['Ref_Clean'] + "_" + df_b['Monto'].astype(str)
     df_p['Key1'] = df_p['Ref_Clean'] + "_" + df_p['Monto'].astype(str)
     
     cruces_1 = df_b[df_b['Key1'].isin(df_p['Key1'])].copy()
+    
+    # Restar los ya conciliados para el siguiente paso
     pendientes_b = df_b[~df_b['Key1'].isin(df_p['Key1'])].copy()
     pendientes_p = df_p[~df_p['Key1'].isin(df_b['Key1'])].copy()
     
-    # --- ETAPA 2: CRUCE ÚLTIMOS 3 DÍGITOS ---
+    # --- PASO 2: Cruce últimos 3 dígitos (3D Ref + Monto) ---
     pendientes_b['Key2'] = pendientes_b['Ref_3D'] + "_" + pendientes_b['Monto'].astype(str)
     pendientes_p['Key2'] = pendientes_p['Ref_3D'] + "_" + pendientes_p['Monto'].astype(str)
     
+    # Cruce solo si coinciden 3D Y Monto
     cruces_2 = pendientes_b[pendientes_b['Key2'].isin(pendientes_p['Key2'])].copy()
     
     # Resultados finales
@@ -78,7 +86,7 @@ if banco_file and profit_file:
     solo_b = pendientes_b[~pendientes_b['Key2'].isin(pendientes_p['Key2'])]
     solo_p = pendientes_p[~pendientes_p['Key2'].isin(pendientes_b['Key2'])]
 
-    # Mostrar tablas (sin columnas extras)
+    # Mostrar tablas
     cols_a_mostrar = ['Fecha', 'Ref', 'Desc', 'Deb', 'Cred']
     
     t1, t2, t3 = st.tabs(["✅ Cruces Exitosos", "🏦 Solo Banco", "💻 Solo Profit"])
@@ -86,7 +94,7 @@ if banco_file and profit_file:
     t2.dataframe(solo_b[cols_a_mostrar], use_container_width=True)
     t3.dataframe(solo_p[cols_a_mostrar], use_container_width=True)
 
-    # 4. BOTÓN DE DESCARGA
+    # Botón Descarga
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         final_cruces[cols_a_mostrar].to_excel(writer, sheet_name='Cruces_Exitosos', index=False)
