@@ -26,12 +26,10 @@ with p1: frecuencia = st.selectbox("⏱️ Frecuencia:", ["Semanal", "Quincenal"
 with p2: mes = st.selectbox("📆 Mes:", ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"])
 with p3: ano = st.selectbox("📅 Año:", ["2026", "2027", "2025"])
 
-# Carga de archivos
 col1, col2 = st.columns(2)
 with col1: banco_file = st.file_uploader("📥 Estado de Cuenta (.csv)", type=["csv"])
 with col2: profit_file = st.file_uploader("📥 Reporte Profit (.csv)", type=["csv"])
 
-# Lógica de procesamiento
 def procesar(file):
     df = pd.read_csv(file, sep=';', encoding="latin-1", dtype=str)
     cols_ref = [c for c in df.columns if 'referencia' in c.lower()]
@@ -50,11 +48,9 @@ if banco_file and profit_file:
     df_b = procesar(banco_file)
     df_p = procesar(profit_file)
     
-    # Limpieza básica
     df_b['Ref_Clean'] = df_b['Ref'].apply(limpiar)
     df_p['Ref_Clean'] = df_p['Ref'].apply(limpiar)
     
-    # Filtro: Descartar referencias < 3 dígitos antes de procesar
     df_b = df_b[df_b['Ref_Clean'].str.len() >= 3].copy()
     df_p = df_p[df_p['Ref_Clean'].str.len() >= 3].copy()
     
@@ -64,16 +60,37 @@ if banco_file and profit_file:
     df_b['Monto'] = pd.to_numeric(df_b['Cred'].str.replace(',', '.'), errors='coerce').fillna(0)
     df_p['Monto'] = pd.to_numeric(df_p['Cred'].str.replace(',', '.'), errors='coerce').fillna(0)
     
-    # --- PASO 1: Cruce 100% (Ref completa + Monto) ---
+    # --- PROCESAMIENTO ---
     df_b['Key1'] = df_b['Ref_Clean'] + "_" + df_b['Monto'].astype(str)
     df_p['Key1'] = df_p['Ref_Clean'] + "_" + df_p['Monto'].astype(str)
     
     cruces_1 = df_b[df_b['Key1'].isin(df_p['Key1'])].copy()
     cruces_1['Metodo_Cruce'] = '100% Exacto'
     
-    # Restar los ya conciliados para el siguiente paso
     pendientes_b = df_b[~df_b['Key1'].isin(df_p['Key1'])].copy()
     pendientes_p = df_p[~df_p['Key1'].isin(df_b['Key1'])].copy()
     
-    # --- PASO 2: Cruce últimos 3 dígitos (3D Ref + Monto) ---
-    pendientes_b['Key2'] =
+    pendientes_b['Key2'] = pendientes_b['Ref_3D'] + "_" + pendientes_b['Monto'].astype(str)
+    pendientes_p['Key2'] = pendientes_p['Ref_3D'] + "_" + pendientes_p['Monto'].astype(str)
+    
+    cruces_2 = pendientes_b[pendientes_b['Key2'].isin(pendientes_p['Key2'])].copy()
+    cruces_2['Metodo_Cruce'] = '3 Últimos Dígitos'
+    
+    final_cruces = pd.concat([cruces_1, cruces_2])
+    solo_b = pendientes_b[~pendientes_b['Key2'].isin(pendientes_p['Key2'])]
+    solo_p = pendientes_p[~pendientes_p['Key2'].isin(pendientes_b['Key2'])]
+
+    cols_a_mostrar = ['Metodo_Cruce', 'Fecha', 'Ref', 'Desc', 'Deb', 'Cred']
+    
+    t1, t2, t3 = st.tabs(["✅ Cruces Exitosos", "🏦 Solo Banco", "💻 Solo Profit"])
+    t1.dataframe(final_cruces[cols_a_mostrar], use_container_width=True)
+    t2.dataframe(solo_b[cols_a_mostrar[1:]], use_container_width=True)
+    t3.dataframe(solo_p[cols_a_mostrar[1:]], use_container_width=True)
+
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        final_cruces[cols_a_mostrar].to_excel(writer, sheet_name='Cruces_Exitosos', index=False)
+        solo_b[cols_a_mostrar[1:]].to_excel(writer, sheet_name='Solo_Banco', index=False)
+        solo_p[cols_a_mostrar[1:]].to_excel(writer, sheet_name='Solo_Profit', index=False)
+    
+    st.download_button("📥 Descargar Conciliación Completa (.xlsx)", data=output.getvalue(), file_name="Conciliacion_Final.xlsx")
