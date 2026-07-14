@@ -2,80 +2,79 @@ import streamlit as st
 import pandas as pd
 import io
 
-# Configuración y CSS (Mantenido)
+# --- CONFIGURACIÓN Y ESTILOS (Mantenidos) ---
 st.set_page_config(page_title="Conciliación Bancaria con KPIs", page_icon="📊", layout="wide")
+
 custom_css = """
     <style>
     .stApp { background-color: #0d1b2a; color: #e0e1dd; }
     h1, h2, h3 { color: #ffffff !important; }
-    div[data-testid="stMetricValue"] { color: #00b4d8 !important; }
-    .stDownloadButton button { background-color: #0077b6 !important; color: white !important; }
+    div[data-testid="stMetricValue"] { color: #00b4d8 !important; font-size: 28px !important; font-weight: bold !important; }
+    .stDownloadButton button { background-color: #0077b6 !important; color: white !important; border-radius: 8px !important; }
+    .footer { position: fixed; left: 0; bottom: 0; width: 100%; background-color: #0b132b; color: #bcbed8; text-align: center; padding: 10px; font-size: 14px; border-top: 2px solid #0077b6; }
     </style>
 """
 st.markdown(custom_css, unsafe_allow_html=True)
 
+# --- HEADER Y CONFIGURACIÓN ---
 st.title("📊 Sistema Automatizado de Conciliación Bancaria")
+c1, c2 = st.columns(2)
+empresa = c1.selectbox("🏢 Seleccione la empresa:", ["Thermo Group", "Mystic", "Keravital"])
+bancos = {"Thermo Group": ["Banesco", "Venezuela", "Banplus", "Mercantil", "Banco Fondo Común"], "Mystic": ["Banesco", "Venezuela", "Banplus", "Banplus Mazal"], "Keravital": ["Banesco", "Venezuela"]}
+banco = c2.selectbox("🏦 Seleccione el banco:", bancos[empresa])
 
-# Configuración de Período
-c1, c2, c3 = st.columns(3)
-mes = c1.selectbox("📆 Mes:", ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"])
-ano = c2.selectbox("📅 Año:", ["2026", "2027", "2025"])
-frecuencia = c3.selectbox("⏱️ Frecuencia:", ["Semanal", "Quincenal", "Mensual"])
+p1, p2, p3 = st.columns(3)
+frecuencia = p1.selectbox("⏱️ Frecuencia:", ["Semanal", "Quincenal", "Mensual"])
+mes = p2.selectbox("📆 Mes:", ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"])
+ano = p3.selectbox("📅 Año:", ["2026", "2027", "2025"])
 
-# Selección de archivos
-col1, col2 = st.columns(2)
-banco_file = col1.file_uploader("📥 Estado de Cuenta Bancario", type=["csv"])
-profit_file = col2.file_uploader("📥 Reporte de Profit Plus", type=["csv"])
+# --- CARGA DE ARCHIVOS ---
+b1, b2 = st.columns(2)
+banco_file = b1.file_uploader(f"📥 Estado de Cuenta {banco}", type=["csv"])
+profit_file = b2.file_uploader("📥 Reporte Profit Plus", type=["csv"])
 
-def preparar_df(file):
-    # Leemos el archivo y forzamos la fecha al inicio
+def limpiar_monto(serie):
+    return pd.to_numeric(serie.astype(str).str.replace('.', '', regex=False).str.replace(',', '.', regex=False).str.strip(), errors='coerce').fillna(0)
+
+def procesar_df(file, es_banco):
     df = pd.read_csv(file, sep=None, encoding="latin-1", engine="python", on_bad_lines="skip")
     df.columns = [str(c).strip() for c in df.columns]
-    
-    # Normalizar columnas: Referencia -> Ref
     if 'Referencia' in df.columns: df.rename(columns={'Referencia': 'Ref'}, inplace=True)
     
-    # Asegurar orden de columnas (asumiendo que las primeras 3 son Fecha, Ref, Desc)
+    # Estandarizar nombres (ajustado a tu estructura)
     cols = list(df.columns)
-    df = df.rename(columns={cols[0]: 'Fecha', cols[1]: 'Ref', cols[2]: 'Desc'})
-    
-    # Conversión segura de fecha
-    df['Fecha'] = pd.to_datetime(df['Fecha'], errors='coerce', dayfirst=True).dt.strftime('%d/%m/%Y')
-    
-    # Limpieza de Referencia y Montos
-    df['Ref'] = df['Ref'].fillna('').astype(str).str.strip()
-    
-    # Calcular monto total (usando columnas 3 y 4 como Debe/Haber o Deb/Cred)
-    df['M1'] = pd.to_numeric(df.iloc[:, 3].astype(str).str.replace('.', '', regex=False).str.replace(',', '.', regex=False), errors='coerce').fillna(0)
-    df['M2'] = pd.to_numeric(df.iloc[:, 4].astype(str).str.replace('.', '', regex=False).str.replace(',', '.', regex=False), errors='coerce').fillna(0)
-    df['Monto_Limpio'] = df['M1'] + df['M2']
-    
+    df = df.rename(columns={cols[0]: 'Fecha', cols[1]: 'Ref', cols[2]: 'Desc', cols[3]: 'M1', cols[4]: 'M2'})
+    df['Ref'] = df['Ref'].fillna('').astype(str).str.strip().str.lstrip('0')
+    df['Monto_Limpio'] = limpiar_monto(df['M1']) + limpiar_monto(df['M2'])
     return df
 
 if banco_file and profit_file:
-    df_b = preparar_df(banco_file)
-    df_p = preparar_df(profit_file)
+    df_b = procesar_df(banco_file, True)
+    df_p = procesar_df(profit_file, False)
 
-    # Lógica de cruces (100% y últimos 3 dígitos)
+    # Lógica: 1. Cruce Exacto | 2. Cruce últimos 3 dígitos
     cruce_1 = pd.merge(df_b, df_p, on=['Ref', 'Monto_Limpio'], suffixes=('_B', '_P'))
     
-    df_b['Ref_3'] = df_b['Ref'].str[-3:]
-    df_p['Ref_3'] = df_p['Ref'].str[-3:]
+    df_b['Ref3'] = df_b['Ref'].str[-3:]
+    df_p['Ref3'] = df_p['Ref'].str[-3:]
     
-    res_b = df_b[~df_b.index.isin(cruce_1.index)]
-    res_p = df_p[~df_p.index.isin(cruce_1.index)]
+    rest_b = df_b[~df_b.index.isin(cruce_1.index)]
+    rest_p = df_p[~df_p.index.isin(cruce_1.index)]
+    cruce_2 = pd.merge(rest_b, rest_p, on=['Ref3', 'Monto_Limpio'], suffixes=('_B', '_P'))
     
-    cruce_2 = pd.merge(res_b, res_p, on=['Ref_3', 'Monto_Limpio'], suffixes=('_B', '_P'))
-    
-    cruces = pd.concat([cruce_1, cruce_2])
-    solo_b = df_b[~df_b.index.isin(cruces.index)]
-    solo_p = df_p[~df_p.index.isin(cruces.index)]
+    cruces_final = pd.concat([cruce_1, cruce_2])
+    solo_b = df_b[~df_b.index.isin(cruces_final.index)]
+    solo_p = df_p[~df_p.index.isin(cruces_final.index)]
 
-    # Visualización limpia
-    tab1, tab2, tab3 = st.tabs(["✅ Cruces Exitosos", "🏦 Pendiente Banco", "💻 Pendiente Profit"])
+    # --- PESTAÑAS Y RESULTADOS ---
+    tab1, tab2, tab3, tab4 = st.tabs(["✅ Cruces Exitosos", "🏦 Pendiente Banco", "💻 Pendiente Profit", "📈 Indicadores"])
     
-    with tab1: st.dataframe(cruces[['Fecha_B', 'Ref_B', 'Desc_B', 'M1_B', 'M2_B']], use_container_width=True)
+    with tab1: st.dataframe(cruces_final[['Fecha_B', 'Ref_B', 'Desc_B', 'M1_B', 'M2_B']], use_container_width=True)
     with tab2: st.dataframe(solo_b[['Fecha', 'Ref', 'Desc', 'M1', 'M2']], use_container_width=True)
     with tab3: st.dataframe(solo_p[['Fecha', 'Ref', 'Desc', 'M1', 'M2']], use_container_width=True)
     
-    st.info(f"Reporte generado para {mes} {ano} - {frecuencia}")
+    with tab4:
+        st.metric("🎯 Tasa de Conciliación", f"{(len(cruces_final)/len(df_b)*100):.1f}%")
+        st.bar_chart(pd.DataFrame({'Categoría': ['Conciliados', 'Solo Banco', 'Solo Profit'], 'Movimientos': [len(cruces_final), len(solo_b), len(solo_p)]}).set_index('Categoría'))
+
+st.markdown('<div class="footer"><p>© 2026 | Sistema Automatizado de Conciliación Bancaria — Creado por Olgleidys Hernández 👩‍💻✨</p></div>', unsafe_allow_html=True)
