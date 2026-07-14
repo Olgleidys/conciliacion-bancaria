@@ -1,80 +1,65 @@
 import streamlit as st
 import pandas as pd
 import io
-import re
 
-# 1. CONFIGURACIÓN Y ESTILO (Mantenido igual)
-st.set_page_config(page_title="Conciliación Bancaria", layout="wide")
-st.markdown("""
-    <style>
-    .stApp { background-color: #0d1b2a; color: #e0e1dd; }
-    h1, h2, h3 { color: #ffffff !important; }
-    div[data-testid="stMetricValue"] { color: #00b4d8 !important; }
-    .stDownloadButton button { background-color: #0077b6 !important; color: white !important; }
-    </style>
-""", unsafe_allow_html=True)
+# ... (Mantén tu configuración de CSS igual)
 
-st.title("📊 Sistema Automatizado de Conciliación Bancaria")
-
-# Configuración (Mantenida igual)
-c1, c2 = st.columns(2)
-with c1: empresa = st.selectbox("🏢 Empresa:", ["Thermo Group", "Mystic", "Keravital"])
-with c2: banco = st.selectbox("🏦 Banco:", ["Banesco", "Venezuela", "Banplus", "Mercantil", "Banco Fondo Común"])
-
-# Carga de archivos
-col1, col2 = st.columns(2)
-with col1: banco_file = st.file_uploader("📥 Estado de Cuenta (.csv)", type=["csv"])
-with col2: profit_file = st.file_uploader("📥 Reporte Profit (.csv)", type=["csv"])
-
-def procesar(file):
-    df = pd.read_csv(file, sep=';', encoding="latin-1", dtype=str)
-    cols_ref = [c for c in df.columns if 'referencia' in c.lower()]
-    ref_col = cols_ref[0] if cols_ref else df.columns[1]
-    df = df[[df.columns[0], ref_col, df.columns[2], df.columns[3], df.columns[4]]]
-    df.columns = ['Fecha', 'Ref', 'Desc', 'Deb', 'Cred']
+# Función para limpiar y estandarizar nombres de columnas
+def preparar_dataframe(df, tipo):
+    df.columns = [str(c).strip() for c in df.columns]
+    # Renombrar Referencia a Ref si existe
+    if 'Referencia' in df.columns:
+        df.rename(columns={'Referencia': 'Ref'}, inplace=True)
+    
+    # Asegurar que existan las columnas base para el cruce
+    df['Ref'] = df['Ref'].fillna('').astype(str).str.strip()
+    
+    # Calcular monto único para conciliación
+    if tipo == 'banco':
+        df['Monto_Limpio'] = limpiar_monto(df['Deb']) + limpiar_monto(df['Cred'])
+    else:
+        df['Monto_Limpio'] = limpiar_monto(df['Debe']) + limpiar_monto(df['Haber'])
     return df
 
-def limpiar_ref(valor):
-    if pd.isna(valor): return ""
-    return re.sub(r'[^0-9]', '', str(valor))
-
-def limpiar_monto(valor):
-    # Elimina puntos de miles y cambia coma por punto decimal
-    v = str(valor).replace('.', '').replace(',', '.')
-    return pd.to_numeric(v, errors='coerce')
-
 if banco_file and profit_file:
-    df_b = procesar(banco_file)
-    df_p = procesar(profit_file)
+    df_banco = preparar_dataframe(procesar_csv(banco_file), 'banco')
+    df_profit = preparar_dataframe(procesar_csv(profit_file), 'profit')
     
-    # Preparación
-    for df in [df_b, df_p]:
-        df['Ref_Clean'] = df['Ref'].apply(limpiar_ref)
-        df['Monto'] = df['Cred'].apply(limpiar_monto).fillna(0)
+    # --- LÓGICA DE CONCILIACIÓN ---
+    # 1. Cruce 100% (Ref completa + Monto)
+    cruce_1 = pd.merge(df_banco, df_profit, on=['Ref', 'Monto_Limpio'], suffixes=('_B', '_P'))
     
-    # Cruces
-    df_b['Key1'] = df_b['Ref_Clean'] + "_" + df_b['Monto'].astype(str)
-    df_p['Key1'] = df_p['Ref_Clean'] + "_" + df_p['Monto'].astype(str)
+    # 2. Cruce por últimos 3 dígitos (Ref[-3:] + Monto)
+    df_banco['Ref_3'] = df_banco['Ref'].str[-3:]
+    df_profit['Ref_3'] = df_profit['Ref'].str[-3:]
     
-    df_b['Key2'] = df_b['Ref_Clean'].str[-3:] + "_" + df_b['Monto'].astype(str)
-    df_p['Key2'] = df_p['Ref_Clean'].str[-3:] + "_" + df_p['Monto'].astype(str)
+    # Excluimos los ya conciliados en el paso 1
+    rest_banco = df_banco[~df_banco.index.isin(cruce_1.index.get_level_values(0))]
+    rest_profit = df_profit[~df_profit.index.isin(cruce_1.index.get_level_values(1))]
     
-    # Filtro de seguridad: Ref >= 3 dígitos
-    df_b = df_b[df_b['Ref_Clean'].str.len() >= 3]
-    df_p = df_p[df_p['Ref_Clean'].str.len() >= 3]
+    cruce_2 = pd.merge(rest_banco, rest_profit, on=['Ref_3', 'Monto_Limpio'], suffixes=('_B', '_P'))
     
-    # Lógica de cruce
-    cruces = pd.concat([
-        df_b[df_b['Key1'].isin(df_p['Key1'])],
-        df_b[~df_b['Key1'].isin(df_p['Key1']) & df_b['Key2'].isin(df_p['Key2'])]
-    ])
+    # Unir ambos cruces
+    cruces_final = pd.concat([cruce_1, cruce_2])
     
-    solo_b = df_b[~df_b['Key1'].isin(df_p['Key1']) & ~df_b['Key2'].isin(df_p['Key2'])]
-    solo_p = df_p[~df_p['Key1'].isin(df_b['Key1']) & ~df_p['Key2'].isin(df_b['Key2'])]
+    # Definir pendientes sin eliminar nada
+    solo_banco_df = df_banco[~df_banco.index.isin(cruces_final.index.get_level_values(0))]
+    solo_profit_df = df_profit[~df_profit.index.isin(cruces_final.index.get_level_values(1))]
     
-    # Mostrar resultados
-    cols = ['Fecha', 'Ref', 'Desc', 'Deb', 'Cred']
-    t1, t2, t3 = st.tabs(["✅ Cruces Exitosos", "🏦 Solo Banco", "💻 Solo Profit"])
-    t1.dataframe(cruces[cols], use_container_width=True)
-    t2.dataframe(solo_b[cols], use_container_width=True)
-    t3.dataframe(solo_p[cols], use_container_width=True)
+    # --- LIMPIEZA FINAL DE COLUMNAS PARA EL USUARIO ---
+    # Solo dejamos las columnas originales: Fecha, Ref, Desc, Montos
+    cols_b_show = ['Fecha', 'Ref', 'Desc', 'Deb', 'Cred']
+    cols_p_show = ['Fecha', 'Ref', 'Desc', 'Debe', 'Haber']
+    
+    # En los tabs, mostramos solo estas columnas limpias
+    with tab1:
+        st.dataframe(cruces_final[cols_b_show], use_container_width=True)
+        
+    with tab2:
+        st.dataframe(solo_banco_df[cols_b_show], use_container_width=True)
+        
+    with tab3:
+        st.dataframe(solo_profit_df[cols_p_show], use_container_width=True)
+        
+    # En la descarga de Excel, aplicamos el mismo filtro
+    # ... (En la parte de exportación usar los mismos DataFrames filtrados)
