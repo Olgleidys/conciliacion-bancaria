@@ -34,13 +34,15 @@ def limpiar_monto(serie):
     return pd.to_numeric(serie.astype(str).str.replace('.', '', regex=False).str.replace(',', '.', regex=False).str.strip(), errors='coerce').fillna(0)
 
 if banco_file and profit_file:
+    # Cargar archivos
     df_b = pd.read_csv(banco_file, sep=None, encoding="latin-1", engine="python", on_bad_lines="skip")
     df_p = pd.read_csv(profit_file, sep=None, encoding="latin-1", engine="python", on_bad_lines="skip")
     
-    # Crear copias de trabajo para la lógica
-    df_b_proc = df_b.copy()
-    df_p_proc = df_p.copy()
+    # Filtrar columnas desde el inicio (solo las primeras 5 columnas originales)
+    df_b_proc = df_b.iloc[:, :5].copy()
+    df_p_proc = df_p.iloc[:, :5].copy()
     
+    # Procesamiento y estandarización
     for df in [df_b_proc, df_p_proc]:
         df.columns = [str(c).strip() for c in df.columns]
         if 'Referencia' in df.columns: df.rename(columns={'Referencia': 'Ref'}, inplace=True)
@@ -50,43 +52,39 @@ if banco_file and profit_file:
         df['Monto_Limpio'] = limpiar_monto(df['M1']) + limpiar_monto(df['M2'])
         df['Ref3'] = df['Ref'].str[-3:]
 
-    # Conciliación
-    df_b['Estado'] = 'Pendiente'
-    df_p['Estado'] = 'Pendiente'
+    # Inicializar Estado
+    df_b_proc['Estado'] = 'Pendiente'
+    df_p_proc['Estado'] = 'Pendiente'
     
+    # Lógica de conciliación
     matches = pd.merge(df_b_proc.reset_index(), df_p_proc.reset_index(), on=['Ref', 'Monto_Limpio'], suffixes=('_B', '_P'))
-    df_b.loc[matches['index_B'], 'Estado'] = 'Conciliado'
-    df_p.loc[matches['index_P'], 'Estado'] = 'Conciliado'
+    df_b_proc.loc[matches['index_B'], 'Estado'] = 'Conciliado'
+    df_p_proc.loc[matches['index_P'], 'Estado'] = 'Conciliado'
 
-    pend_b = df_b_proc[df_b['Estado'] == 'Pendiente']
-    pend_p = df_p_proc[df_p['Estado'] == 'Pendiente']
+    pend_b = df_b_proc[df_b_proc['Estado'] == 'Pendiente']
+    pend_p = df_p_proc[df_p_proc['Estado'] == 'Pendiente']
     matches3 = pd.merge(pend_b.reset_index(), pend_p.reset_index(), on=['Ref3', 'Monto_Limpio'], suffixes=('_B', '_P'))
     
-    df_b.loc[matches3['index_B'], 'Estado'] = 'Conciliado'
-    df_p.loc[matches3['index_P'], 'Estado'] = 'Conciliado'
+    df_b_proc.loc[matches3['index_B'], 'Estado'] = 'Conciliado'
+    df_p_proc.loc[matches3['index_P'], 'Estado'] = 'Conciliado'
 
-    # --- NUEVA LÓGICA PARA ELIMINAR COLUMNAS ---
-    # Seleccionamos solo las primeras 5 columnas originales y añadimos 'Estado'
-    def limpiar_columnas(df):
-        return df.iloc[:, :5].assign(Estado=df['Estado'])
+    # Preparar DataFrames para visualización
+    full_df = pd.concat([df_b_proc.assign(Origen='Banco'), df_p_proc.assign(Origen='Profit')])
 
-    df_b_limpio = limpiar_columnas(df_b)
-    df_p_limpio = limpiar_columnas(df_p)
-
-    # Mostrar resultados
+    # Mostrar resultados en tabs
     tab1, tab2, tab3 = st.tabs(["✅ Todos los movimientos", "🏦 Pendientes Banco", "💻 Pendientes Profit"])
-    
-    with tab1: 
-        st.dataframe(pd.concat([df_b_limpio.assign(Origen='Banco'), df_p_limpio.assign(Origen='Profit')]), use_container_width=True)
-    with tab2: 
-        st.dataframe(df_b_limpio[df_b['Estado'] == 'Pendiente'], use_container_width=True)
-    with tab3: 
-        st.dataframe(df_p_limpio[df_p['Estado'] == 'Pendiente'], use_container_width=True)
+    with tab1: st.dataframe(full_df, use_container_width=True)
+    with tab2: st.dataframe(df_b_proc[df_b_proc['Estado'] == 'Pendiente'], use_container_width=True)
+    with tab3: st.dataframe(df_p_proc[df_p_proc['Estado'] == 'Pendiente'], use_container_width=True)
 
-    # Descarga
+    # Descarga de Excel con múltiples pestañas
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        pd.concat([df_b_limpio.assign(Origen='Banco'), df_p_limpio.assign(Origen='Profit')]).to_excel(writer, sheet_name='Todos_Movimientos', index=False)
-    st.download_button("📥 Descargar Conciliación Completa (Con Estados)", data=output.getvalue(), file_name="Conciliacion_Completa.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        full_df.to_excel(writer, sheet_name='Todos_Movimientos', index=False)
+        df_b_proc[df_b_proc['Estado'] == 'Pendiente'].to_excel(writer, sheet_name='Pendientes_Banco', index=False)
+        df_p_proc[df_p_proc['Estado'] == 'Pendiente'].to_excel(writer, sheet_name='Pendientes_Profit', index=False)
+        df_b_proc[df_b_proc['Estado'] == 'Conciliado'].to_excel(writer, sheet_name='Conciliados', index=False)
+        
+    st.download_button("📥 Descargar Conciliación Completa (Con Pestañas)", data=output.getvalue(), file_name="Conciliacion_Completa.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
-st.markdown('<div class="footer"><p>© 2026 | Sistema Automatizado de Conciliación Bancaria — Creado por Lic. Olgleidys Hernández ✨</p></div>', unsafe_allow_html=True)
+st.markdown('<div class="footer"><p>© 2026 | Sistema Automatizado de Conciliación Bancaria — Creado por Olgleidys Hernández 👩‍💻✨</p></div>', unsafe_allow_html=True)
