@@ -86,6 +86,8 @@ if banco_file and profit_file:
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         full_df[cols_a_mostrar].to_excel(writer, sheet_name='Todos_Movimientos', index=False)
+        df_b_proc[df_b_proc['Estado'] == 'Pendiente'][cols_a_mostrar[:-1]].to_excel(writer, sheet_name='Pendientes_Banco', index=False)
+        df_p_proc[df_p_proc['Estado'] == 'Pendiente'][cols_a_mostrar[:-1]].to_excel(writer, sheet_name='Pendientes_Profit', index=False)
         
     st.download_button("📥 Descargar conciliación completa (Excel)", data=output.getvalue(), file_name="Conciliacion_Completa.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
