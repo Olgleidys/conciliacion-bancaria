@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import io
 
-# --- CONFIGURACIÓN Y ESTILOS (Mantenidos) ---
+# --- CONFIGURACIÓN Y ESTILOS ---
 st.set_page_config(page_title="Conciliación Bancaria con KPIs", page_icon="📊", layout="wide")
 
 custom_css = """
@@ -23,11 +23,6 @@ c1, c2 = st.columns(2)
 empresa = c1.selectbox("🏢 Seleccione la empresa:", ["Thermo Group", "Mystic", "Keravital"])
 banco = c2.selectbox("🏦 Seleccione el banco:", ["Banesco", "Venezuela", "Banplus", "Mercantil", "Banco Fondo Común"])
 
-p1, p2, p3 = st.columns(3)
-frecuencia = p1.selectbox("⏱️ Frecuencia:", ["Semanal", "Quincenal", "Mensual"])
-mes = p2.selectbox("📆 Mes:", ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"])
-ano = p3.selectbox("📅 Año:", ["2026", "2027", "2025"])
-
 banco_file = st.file_uploader(f"📥 Estado de Cuenta {banco} (.csv)", type=["csv"])
 profit_file = st.file_uploader("📥 Reporte de Profit Plus (.csv)", type=["csv"])
 
@@ -38,7 +33,11 @@ if banco_file and profit_file:
     df_b = pd.read_csv(banco_file, sep=None, encoding="latin-1", engine="python", on_bad_lines="skip")
     df_p = pd.read_csv(profit_file, sep=None, encoding="latin-1", engine="python", on_bad_lines="skip")
     
-    # Procesamiento interno
+    # Capturar nombres originales
+    nombres_orig_b = list(df_b.columns)
+    nombres_orig_p = list(df_p.columns)
+    
+    # Procesamiento interno (usando M1/M2)
     for df in [df_b, df_p]:
         df.columns = [str(c).strip() for c in df.columns]
         if 'Referencia' in df.columns: df.rename(columns={'Referencia': 'Ref'}, inplace=True)
@@ -59,23 +58,28 @@ if banco_file and profit_file:
     cruce_2 = pd.merge(rest_b, rest_p, on=['Ref3', 'Monto_Limpio'], suffixes=('_B', '_P'))
     cruces_final = pd.concat([cruce_1, cruce_2])
     
+    # Restaurar nombres para visualización
+    df_b_final = df_b.rename(columns={'Fecha': nombres_orig_b[0], 'Ref': nombres_orig_b[1], 'Desc': nombres_orig_b[2], 'M1': nombres_orig_b[3], 'M2': nombres_orig_b[4]})
+    df_p_final = df_p.rename(columns={'Fecha': nombres_orig_p[0], 'Ref': nombres_orig_p[1], 'Desc': nombres_orig_p[2], 'M1': nombres_orig_p[3], 'M2': nombres_orig_p[4]})
+    
+    # Preparar el dataframe de cruces con nombres originales
+    cruces_final_show = cruces_final.rename(columns={
+        'Fecha_B': nombres_orig_b[0], 'Ref_B': nombres_orig_b[1], 'Desc_B': nombres_orig_b[2], 'M1_B': nombres_orig_b[3], 'M2_B': nombres_orig_b[4]
+    })
+    
     # Tabs
     tab1, tab2, tab3 = st.tabs(["✅ Cruces Exitosos", "🏦 Pendiente Banco", "💻 Pendiente Profit"])
     
-    # Seleccionamos las columnas resultantes del merge que siempre existen (con sufijos _B y _P)
-    cols_cruce = ['Fecha_B', 'Ref_B', 'Desc_B', 'M1_B', 'M2_B']
-    cols_orig = ['Fecha', 'Ref', 'Desc', 'M1', 'M2']
-    
-    with tab1: st.dataframe(cruces_final[cols_cruce], use_container_width=True)
-    with tab2: st.dataframe(df_b.loc[~df_b.index.isin(cruces_final.index), cols_orig], use_container_width=True)
-    with tab3: st.dataframe(df_p.loc[~df_p.index.isin(cruces_final.index), cols_orig], use_container_width=True)
+    with tab1: st.dataframe(cruces_final_show[nombres_orig_b], use_container_width=True)
+    with tab2: st.dataframe(df_b_final.loc[~df_b.index.isin(cruces_final.index)], use_container_width=True)
+    with tab3: st.dataframe(df_p_final.loc[~df_p.index.isin(cruces_final.index)], use_container_width=True)
     
     # Exportación
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        cruces_final[cols_cruce].to_excel(writer, sheet_name='Conciliados', index=False)
-        df_b.loc[~df_b.index.isin(cruces_final.index), cols_orig].to_excel(writer, sheet_name='Solo_Banco', index=False)
-        df_p.loc[~df_p.index.isin(cruces_final.index), cols_orig].to_excel(writer, sheet_name='Solo_Profit', index=False)
+        cruces_final_show[nombres_orig_b].to_excel(writer, sheet_name='Conciliados', index=False)
+        df_b_final.loc[~df_b.index.isin(cruces_final.index)].to_excel(writer, sheet_name='Solo_Banco', index=False)
+        df_p_final.loc[~df_p.index.isin(cruces_final.index)].to_excel(writer, sheet_name='Solo_Profit', index=False)
     
     st.download_button("📥 Descargar Conciliación (Excel)", data=output.getvalue(), file_name="Conciliacion_Final.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
