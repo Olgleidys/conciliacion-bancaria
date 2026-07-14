@@ -8,7 +8,6 @@ custom_css = """
     <style>
     .stApp { background-color: #0d1b2a; color: #e0e1dd; }
     h1, h2, h3 { color: #ffffff !important; }
-    div[data-testid="stMetricValue"] { color: #00b4d8 !important; font-size: 28px !important; font-weight: bold !important; }
     .stDownloadButton button { background-color: #0077b6 !important; color: white !important; border-radius: 8px !important; }
     .footer { position: fixed; left: 0; bottom: 0; width: 100%; background-color: #0b132b; color: #bcbed8; text-align: center; padding: 10px; font-size: 14px; border-top: 2px solid #0077b6; }
     </style>
@@ -34,49 +33,50 @@ def limpiar_monto(serie):
     return pd.to_numeric(serie.astype(str).str.replace('.', '', regex=False).str.replace(',', '.', regex=False).str.strip(), errors='coerce').fillna(0)
 
 if banco_file and profit_file:
-    # Leer archivos originales
     df_b = pd.read_csv(banco_file, sep=None, encoding="latin-1", engine="python", on_bad_lines="skip")
     df_p = pd.read_csv(profit_file, sep=None, encoding="latin-1", engine="python", on_bad_lines="skip")
     
-    # 1. Conservar solo las 5 primeras columnas originales
-    df_b_final = df_b.iloc[:, :5].copy()
-    df_p_final = df_p.iloc[:, :5].copy()
+    # --- PROCESAMIENTO ---
+    # Trabajamos con copias para no afectar la estructura original si necesitas los datos después
+    df_b_proc = df_b.iloc[:, :5].copy()
+    df_p_proc = df_p.iloc[:, :5].copy()
     
-    # 2. Copia para lógica (con nombres estandarizados internos)
-    df_b_log = df_b_final.copy()
-    df_p_log = df_p_final.copy()
+    # Nombres de columnas deseados
+    nombres_cols = ['Fecha', 'Referencia', 'Descripción', 'Debito', 'Credito']
+    df_b_proc.columns = nombres_cols
+    df_p_proc.columns = nombres_cols
     
+    # Lógica de conciliación interna
+    df_b_log = df_b_proc.copy()
+    df_p_log = df_p_proc.copy()
     for df in [df_b_log, df_p_log]:
-        df.columns = ['Fecha', 'Ref', 'Desc', 'M1', 'M2']
-        df['Ref'] = df['Ref'].fillna('').astype(str).str.strip()
-        df['Monto_Limpio'] = limpiar_monto(df['M1']) + limpiar_monto(df['M2'])
-        df['Ref3'] = df['Ref'].str[-3:]
+        df['Monto_Limpio'] = limpiar_monto(df['Debito']) + limpiar_monto(df['Credito'])
+        df['Ref3'] = df['Referencia'].astype(str).str.strip().str[-3:]
 
-    # 3. Conciliación
-    df_b_final['Estado'] = 'Pendiente'
-    df_p_final['Estado'] = 'Pendiente'
+    df_b_proc['Estado'] = 'Pendiente'
+    df_p_proc['Estado'] = 'Pendiente'
     
-    matches = pd.merge(df_b_log.reset_index(), df_p_log.reset_index(), on=['Ref', 'Monto_Limpio'], suffixes=('_B', '_P'))
-    df_b_final.loc[matches['index_B'], 'Estado'] = 'Conciliado'
-    df_p_final.loc[matches['index_P'], 'Estado'] = 'Conciliado'
+    matches = pd.merge(df_b_log.reset_index(), df_p_log.reset_index(), on=['Referencia', 'Monto_Limpio'], suffixes=('_B', '_P'))
+    df_b_proc.loc[matches['index_B'], 'Estado'] = 'Conciliado'
+    df_p_proc.loc[matches['index_P'], 'Estado'] = 'Conciliado'
 
-    pend_b = df_b_log[df_b_final['Estado'] == 'Pendiente']
-    pend_p = df_p_log[df_p_final['Estado'] == 'Pendiente']
+    pend_b = df_b_log[df_b_proc['Estado'] == 'Pendiente']
+    pend_p = df_p_log[df_p_proc['Estado'] == 'Pendiente']
     matches3 = pd.merge(pend_b.reset_index(), pend_p.reset_index(), on=['Ref3', 'Monto_Limpio'], suffixes=('_B', '_P'))
     
-    df_b_final.loc[matches3['index_B'], 'Estado'] = 'Conciliado'
-    df_p_final.loc[matches3['index_P'], 'Estado'] = 'Conciliado'
+    df_b_proc.loc[matches3['index_B'], 'Estado'] = 'Conciliado'
+    df_p_proc.loc[matches3['index_P'], 'Estado'] = 'Conciliado'
 
-    # 4. Mostrar resultados
+    # --- VISUALIZACIÓN ---
     st.subheader("Todos los movimientos conciliados")
-    full_df = pd.concat([df_b_final.assign(Origen='Banco'), df_p_final.assign(Origen='Profit')])
+    full_df = pd.concat([df_b_proc.assign(Origen='Banco'), df_p_proc.assign(Origen='Profit')])
     
     tab1, tab2, tab3 = st.tabs(["✅ Todos los movimientos", "🏦 Pendientes Banco", "💻 Pendientes Profit"])
     with tab1: st.dataframe(full_df, use_container_width=True)
-    with tab2: st.dataframe(df_b_final[df_b_final['Estado'] == 'Pendiente'], use_container_width=True)
-    with tab3: st.dataframe(df_p_final[df_p_final['Estado'] == 'Pendiente'], use_container_width=True)
+    with tab2: st.dataframe(df_b_proc[df_b_proc['Estado'] == 'Pendiente'], use_container_width=True)
+    with tab3: st.dataframe(df_p_proc[df_p_proc['Estado'] == 'Pendiente'], use_container_width=True)
 
-    # 5. Descarga
+    # --- DESCARGA ---
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         full_df.to_excel(writer, sheet_name='Todos_Movimientos', index=False)
