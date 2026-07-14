@@ -8,7 +8,6 @@ custom_css = """
     <style>
     .stApp { background-color: #0d1b2a; color: #e0e1dd; }
     h1, h2, h3 { color: #ffffff !important; }
-    div[data-testid="stMetricValue"] { color: #00b4d8 !important; font-size: 28px !important; font-weight: bold !important; }
     .stDownloadButton button { background-color: #0077b6 !important; color: white !important; border-radius: 8px !important; }
     .footer { position: fixed; left: 0; bottom: 0; width: 100%; background-color: #0b132b; color: #bcbed8; text-align: center; padding: 10px; font-size: 14px; border-top: 2px solid #0077b6; }
     </style>
@@ -17,16 +16,8 @@ st.markdown(custom_css, unsafe_allow_html=True)
 
 st.title("📊 Sistema Automatizado de Conciliación Bancaria")
 
-# Configuración (Período y Empresa)
 c1, c2 = st.columns(2)
-empresa = c1.selectbox("🏢 Empresa:", ["Thermo Group", "Mystic", "Keravital"])
 banco = c2.selectbox("🏦 Banco:", ["Banesco", "Venezuela", "Banplus", "Mercantil", "Banco Fondo Común"])
-
-p1, p2, p3 = st.columns(3)
-frecuencia = p1.selectbox("⏱️ Frecuencia:", ["Semanal", "Quincenal", "Mensual"])
-mes = p2.selectbox("📆 Mes:", ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"])
-ano = p3.selectbox("📅 Año:", ["2026", "2027", "2025"])
-
 banco_file = st.file_uploader(f"📥 Estado de Cuenta {banco} (.csv)", type=["csv"])
 profit_file = st.file_uploader("📥 Reporte de Profit Plus (.csv)", type=["csv"])
 
@@ -34,23 +25,26 @@ def limpiar_monto(serie):
     return pd.to_numeric(serie.astype(str).str.replace('.', '', regex=False).str.replace(',', '.', regex=False).str.strip(), errors='coerce').fillna(0)
 
 if banco_file and profit_file:
+    # Leer archivos
     df_b = pd.read_csv(banco_file, sep=None, encoding="latin-1", engine="python", on_bad_lines="skip")
     df_p = pd.read_csv(profit_file, sep=None, encoding="latin-1", engine="python", on_bad_lines="skip")
     
-    # Crear copias de trabajo para la lógica
-    df_b_proc = df_b.copy()
-    df_p_proc = df_p.copy()
+    # Capturamos los nombres reales de las columnas actuales
+    cols_b = list(df_b.columns)
+    cols_p = list(df_p.columns)
     
+    # Procesamiento (usamos las primeras 5 columnas)
+    df_b_proc = df_b.iloc[:, :5].copy()
+    df_p_proc = df_p.iloc[:, :5].copy()
+    
+    # Renombramos temporalmente para la lógica de conciliación
     for df in [df_b_proc, df_p_proc]:
-        df.columns = [str(c).strip() for c in df.columns]
-        if 'Referencia' in df.columns: df.rename(columns={'Referencia': 'Ref'}, inplace=True)
-        cols = list(df.columns)
-        df.rename(columns={cols[0]: 'Fecha', cols[1]: 'Ref', cols[2]: 'Desc', cols[3]: 'M1', cols[4]: 'M2'}, inplace=True)
+        df.columns = ['Fecha', 'Ref', 'Desc', 'M1', 'M2']
         df['Ref'] = df['Ref'].fillna('').astype(str).str.strip()
         df['Monto_Limpio'] = limpiar_monto(df['M1']) + limpiar_monto(df['M2'])
         df['Ref3'] = df['Ref'].str[-3:]
 
-    # Conciliación (etiquetado sin eliminar nada)
+    # Conciliación
     df_b['Estado'] = 'Pendiente'
     df_p['Estado'] = 'Pendiente'
     
@@ -65,15 +59,12 @@ if banco_file and profit_file:
     df_b.loc[matches3['index_B'], 'Estado'] = 'Conciliado'
     df_p.loc[matches3['index_P'], 'Estado'] = 'Conciliado'
 
-    # Preparar visualización con columnas filtradas
-    cols_resaltadas = ['Fecha', 'Ref', 'Desc', 'M1', 'M2', 'Estado']
+    # Preparar visualización usando los nombres originales capturados al inicio
+    df_b_vis = df_b.iloc[:, :5].copy()
+    df_b_vis['Estado'] = df_b['Estado']
     
-    # Renombrar columnas para la visualización final
-    df_b_vis = df_b[cols_resaltadas].copy()
-    df_b_vis.columns = ['Fecha', 'Referencia', 'Descripción', 'Debito', 'Credito', 'Estado']
-    
-    df_p_vis = df_p[cols_resaltadas].copy()
-    df_p_vis.columns = ['Fecha', 'Referencia', 'Descripción', 'Debito', 'Credito', 'Estado']
+    df_p_vis = df_p.iloc[:, :5].copy()
+    df_p_vis['Estado'] = df_p['Estado']
 
     st.subheader("Todos los movimientos conciliados")
     tab1, tab2, tab3 = st.tabs(["✅ Todos los movimientos", "🏦 Pendientes Banco", "💻 Pendientes Profit"])
