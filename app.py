@@ -1,67 +1,21 @@
-import streamlit as st
-import pandas as pd
-import io
-
-# --- CONFIGURACIÓN Y ESTILOS ---
-st.set_page_config(page_title="Conciliación Bancaria", layout="wide")
-
-custom_css = """
-    <style>
-    .stApp { background-color: #0d1b2a; color: #e0e1dd; }
-    h1, h2, h3 { color: #ffffff !important; }
-    div[data-testid="stMetricValue"] { color: #00b4d8 !important; }
-    .stDownloadButton button { background-color: #0077b6 !important; color: white !important; }
-    </style>
-"""
-st.markdown(custom_css, unsafe_allow_html=True)
-
-st.title("📊 Sistema Automatizado de Conciliación Bancaria")
-
-# --- UI DE CARGA ---
-c1, c2 = st.columns(2)
-banco_file = c1.file_uploader("📥 Estado de Cuenta", type=["csv"])
-profit_file = c2.file_uploader("📥 Reporte Profit", type=["csv"])
-
-def limpiar_monto(serie):
-    return pd.to_numeric(serie.astype(str).str.replace('.', '', regex=False).str.replace(',', '.', regex=False).str.strip(), errors='coerce').fillna(0)
-
-if banco_file and profit_file:
-    # Cargar archivos respetando encabezados originales
-    df_b = pd.read_csv(banco_file, sep=None, engine='python', encoding="latin-1")
-    df_p = pd.read_csv(profit_file, sep=None, engine='python', encoding="latin-1")
+# Definir qué columnas quieres conservar de los originales
+    # Asumiendo que quieres mantener las columnas originales de tus archivos
+    # Ejemplo: si tus columnas originales son ['Fecha', 'Ref', 'Desc', 'M1', 'M2', 'Estado']
+    cols_a_mantener = ['Fecha', 'Ref', 'Desc', 'M1', 'M2', 'Estado'] 
     
-    # Identificar nombres de columnas para el proceso
-    nom_b = list(df_b.columns)
-    nom_p = list(df_p.columns)
+    # Preparamos los DataFrames filtrados
+    df_b_final = df_b.reindex(columns=cols_a_mantener)
+    df_p_final = df_p.reindex(columns=cols_a_mantener)
     
-    # Crear copias para procesar (normalizar nombres para cruce)
-    df_b_proc = df_b.copy()
-    df_p_proc = df_p.copy()
-    
-    for df in [df_b_proc, df_p_proc]:
-        df.rename(columns={df.columns[0]: 'Fecha', df.columns[1]: 'Ref', df.columns[3]: 'Monto'}, inplace=True)
-        df['Monto'] = limpiar_monto(df['Monto'])
-        df['Ref'] = df['Ref'].fillna('').astype(str).str.strip()
+    # Si necesitas la columna Origen, agrégala después del filtro
+    df_full = pd.concat([df_b_final.assign(Origen='Banco'), df_p_final.assign(Origen='Profit')])
 
-    # --- LÓGICA DE CRUCE ---
-    # Merge usando nombres normalizados
-    cruce = pd.merge(df_b_proc, df_p_proc, on=['Ref', 'Monto'], suffixes=('_B', '_P'))
-    
-    # --- FILTRADO DE COLUMNAS PARA EL USUARIO ---
-    # Queremos mostrar solo las columnas originales (ignorando Estado, Origen, etc.)
-    # Seleccionamos las columnas del banco original + las del profit original que no sean Ref/Monto
-    cols_finales = [c for c in cruce.columns if '_B' in c or '_P' in c]
-    cols_limpias = [c for c in cols_finales if 'Estado' not in c and 'Origen' not in c and 'Monto_Limpio' not in c and 'Ref3' not in c]
-    
-    st.subheader("✅ Movimientos Conciliados")
-    st.dataframe(cruce[cols_limpias], use_container_width=True)
-    
-    # --- DESCARGA ---
+    # --- AJUSTAR LA VISUALIZACIÓN ---
+    with tab1: st.dataframe(df_full, use_container_width=True)
+    with tab2: st.dataframe(df_b_final[df_b['Estado'] == 'Pendiente'], use_container_width=True)
+    with tab3: st.dataframe(df_p_final[df_p['Estado'] == 'Pendiente'], use_container_width=True)
+
+    # --- AJUSTAR LA DESCARGA ---
     output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-        cruce[cols_limpias].to_excel(writer, index=False, sheet_name='Conciliados')
-    
-    st.download_button("📥 Descargar Reporte Limpio", data=output.getvalue(), file_name="Reporte_Conciliacion.xlsx")
-
-else:
-    st.info("Cargue ambos archivos para proceder con la conciliación.")
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
+        df_full.to_excel(writer, sheet_name='Todos_Movimientos', index=False)
