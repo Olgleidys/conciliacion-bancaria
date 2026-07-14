@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import io
 
-# --- CONFIGURACIÓN Y ESTILOS ---
+# --- CONFIGURACIÓN Y ESTILOS (Mantenidos) ---
 st.set_page_config(page_title="Conciliación Bancaria con KPIs", page_icon="📊", layout="wide")
 
 custom_css = """
@@ -38,10 +38,6 @@ if banco_file and profit_file:
     df_b = pd.read_csv(banco_file, sep=None, encoding="latin-1", engine="python", on_bad_lines="skip")
     df_p = pd.read_csv(profit_file, sep=None, encoding="latin-1", engine="python", on_bad_lines="skip")
     
-    # Guardar nombres originales
-    nom_b = list(df_b.columns)
-    nom_p = list(df_p.columns)
-    
     # Procesamiento interno
     for df in [df_b, df_p]:
         df.columns = [str(c).strip() for c in df.columns]
@@ -63,27 +59,24 @@ if banco_file and profit_file:
     cruce_2 = pd.merge(rest_b, rest_p, on=['Ref3', 'Monto_Limpio'], suffixes=('_B', '_P'))
     cruces_final = pd.concat([cruce_1, cruce_2])
     
-    # Preparar visualización con nombres originales
-    cols_show_b = [nom_b[0], nom_b[1], nom_b[2], nom_b[3], nom_b[4]]
-    cols_show_p = [nom_p[0], nom_p[1], nom_p[2], nom_p[3], nom_p[4]]
-    
-    df_b_show = df_b.rename(columns={'Fecha': nom_b[0], 'Ref': nom_b[1], 'Desc': nom_b[2], 'M1': nom_b[3], 'M2': nom_b[4]})
-    df_p_show = df_p.rename(columns={'Fecha': nom_p[0], 'Ref': nom_p[1], 'Desc': nom_p[2], 'M1': nom_p[3], 'M2': nom_p[4]})
-    
     # Tabs
     tab1, tab2, tab3 = st.tabs(["✅ Cruces Exitosos", "🏦 Pendiente Banco", "💻 Pendiente Profit"])
     
-    with tab1: st.dataframe(cruces_final[[f'{nom_b[0]}_B', f'{nom_b[1]}_B', f'{nom_b[2]}_B', f'{nom_b[3]}_B', f'{nom_b[4]}_B']], use_container_width=True)
-    with tab2: st.dataframe(df_b_show.loc[~df_b.index.isin(cruces_final.index), cols_show_b], use_container_width=True)
-    with tab3: st.dataframe(df_p_show.loc[~df_p.index.isin(cruces_final.index), cols_show_p], use_container_width=True)
+    # Seleccionamos las columnas resultantes del merge que siempre existen (con sufijos _B y _P)
+    cols_cruce = ['Fecha_B', 'Ref_B', 'Desc_B', 'M1_B', 'M2_B']
+    cols_orig = ['Fecha', 'Ref', 'Desc', 'M1', 'M2']
+    
+    with tab1: st.dataframe(cruces_final[cols_cruce], use_container_width=True)
+    with tab2: st.dataframe(df_b.loc[~df_b.index.isin(cruces_final.index), cols_orig], use_container_width=True)
+    with tab3: st.dataframe(df_p.loc[~df_p.index.isin(cruces_final.index), cols_orig], use_container_width=True)
     
     # Exportación
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        cruces_final[[f'{nom_b[0]}_B', f'{nom_b[1]}_B', f'{nom_b[2]}_B', f'{nom_b[3]}_B', f'{nom_b[4]}_B']].to_excel(writer, sheet_name='Conciliados', index=False)
-        df_b_show.loc[~df_b.index.isin(cruces_final.index), cols_show_b].to_excel(writer, sheet_name='Solo_Banco', index=False)
-        df_p_show.loc[~df_p.index.isin(cruces_final.index), cols_show_p].to_excel(writer, sheet_name='Solo_Profit', index=False)
+        cruces_final[cols_cruce].to_excel(writer, sheet_name='Conciliados', index=False)
+        df_b.loc[~df_b.index.isin(cruces_final.index), cols_orig].to_excel(writer, sheet_name='Solo_Banco', index=False)
+        df_p.loc[~df_p.index.isin(cruces_final.index), cols_orig].to_excel(writer, sheet_name='Solo_Profit', index=False)
     
     st.download_button("📥 Descargar Conciliación (Excel)", data=output.getvalue(), file_name="Conciliacion_Final.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
-st.markdown('<div class="footer"><p>© 2026 | Sistema Automatizado de Conciliación Bancaria — Creado por Olgleidys Hernández ✨</p></div>', unsafe_allow_html=True)
+st.markdown('<div class="footer"><p>© 2026 | Sistema Automatizado de Conciliación Bancaria — Creado por Olgleidys Hernández 👩‍💻✨</p></div>', unsafe_allow_html=True)
