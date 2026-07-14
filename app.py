@@ -3,8 +3,7 @@ import pandas as pd
 import io
 
 # --- CONFIGURACIÓN Y ESTILOS ---
-st.set_page_config(page_title="Conciliación Bancaria con KPIs", page_icon="📊", layout="wide")
-
+st.set_page_config(page_title="Conciliación Bancaria", page_icon="📊", layout="wide")
 custom_css = """
     <style>
     .stApp { background-color: #0d1b2a; color: #e0e1dd; }
@@ -28,64 +27,64 @@ frecuencia = p1.selectbox("⏱️ Frecuencia:", ["Semanal", "Quincenal", "Mensua
 mes = p2.selectbox("📆 Mes:", ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"])
 ano = p3.selectbox("📅 Año:", ["2026", "2027", "2025"])
 
-# Definición de archivos (Deben estar antes de cualquier lógica)
 banco_file = st.file_uploader(f"📥 Estado de Cuenta {banco} (.csv)", type=["csv"])
 profit_file = st.file_uploader("📥 Reporte de Profit Plus (.csv)", type=["csv"])
 
 def limpiar_monto(serie):
     return pd.to_numeric(serie.astype(str).str.replace('.', '', regex=False).str.replace(',', '.', regex=False).str.strip(), errors='coerce').fillna(0)
 
-# --- LÓGICA SOLO SI EXISTEN ARCHIVOS ---
-if banco_file is not None and profit_file is not None:
+if banco_file and profit_file:
     df_b = pd.read_csv(banco_file, sep=None, encoding="latin-1", engine="python", on_bad_lines="skip")
     df_p = pd.read_csv(profit_file, sep=None, encoding="latin-1", engine="python", on_bad_lines="skip")
     
+    # Preservar nombres originales
     nombres_orig_b = list(df_b.columns)
     nombres_orig_p = list(df_p.columns)
     
-    for df in [df_b, df_p]:
+    # Crear copias de trabajo para la lógica
+    df_b_proc = df_b.copy()
+    df_p_proc = df_p.copy()
+    
+    for df in [df_b_proc, df_p_proc]:
         df.columns = [str(c).strip() for c in df.columns]
         if 'Referencia' in df.columns: df.rename(columns={'Referencia': 'Ref'}, inplace=True)
         cols = list(df.columns)
         df.rename(columns={cols[0]: 'Fecha', cols[1]: 'Ref', cols[2]: 'Desc', cols[3]: 'M1', cols[4]: 'M2'}, inplace=True)
         df['Ref'] = df['Ref'].fillna('').astype(str).str.strip()
         df['Monto_Limpio'] = limpiar_monto(df['M1']) + limpiar_monto(df['M2'])
+        df['Ref3'] = df['Ref'].str[-3:]
 
-    # Conciliación
-    cruce_1 = pd.merge(df_b, df_p, on=['Ref', 'Monto_Limpio'], suffixes=('_B', '_P'))
+    # Conciliación (etiquetado sin eliminar nada)
+    df_b['Estado'] = 'Pendiente'
+    df_p['Estado'] = 'Pendiente'
     
-    df_b['Ref3'] = df_b['Ref'].str[-3:]
-    df_p['Ref3'] = df_p['Ref'].str[-3:]
+    # Lógica de cruce y asignación de ID de conciliación
+    # 1. 100%
+    matches = pd.merge(df_b_proc.reset_index(), df_p_proc.reset_index(), on=['Ref', 'Monto_Limpio'], suffixes=('_B', '_P'))
     
-    rest_b = df_b[~df_b.index.isin(cruce_1.index)]
-    rest_p = df_p[~df_p.index.isin(cruce_1.index)]
-    cruce_2 = pd.merge(rest_b, rest_p, on=['Ref3', 'Monto_Limpio'], suffixes=('_B', '_P'))
-    cruces_final = pd.concat([cruce_1, cruce_2])
-    
-    # Preparar visualización limpiando columnas técnicas
-    cols_a_mostrar_b = nombres_orig_b[:5]
-    cols_a_mostrar_p = nombres_orig_p[:5]
-    
-    df_b_show = df_b.rename(columns={'Fecha': nombres_orig_b[0], 'Ref': nombres_orig_b[1], 'Desc': nombres_orig_b[2], 'M1': nombres_orig_b[3], 'M2': nombres_orig_b[4]})
-    df_p_show = df_p.rename(columns={'Fecha': nombres_orig_p[0], 'Ref': nombres_orig_p[1], 'Desc': nombres_orig_p[2], 'M1': nombres_orig_p[3], 'M2': nombres_orig_p[4]})
-    
-    # Cruces (Renombrados correctamente)
-    cruces_show = cruces_final.rename(columns={
-        'Fecha_B': nombres_orig_b[0], 'Ref_B': nombres_orig_b[1], 'Desc_B': nombres_orig_b[2], 'M1_B': nombres_orig_b[3], 'M2_B': nombres_orig_b[4]
-    })[cols_a_mostrar_b]
+    # Marcar estados en los originales
+    df_b.loc[matches['index_B'], 'Estado'] = 'Conciliado'
+    df_p.loc[matches['index_P'], 'Estado'] = 'Conciliado'
 
-    # Tabs
-    tab1, tab2, tab3 = st.tabs(["✅ Cruces Exitosos", "🏦 Pendiente Banco", "💻 Pendiente Profit"])
-    with tab1: st.dataframe(cruces_show, use_container_width=True)
-    with tab2: st.dataframe(df_b_show.loc[~df_b.index.isin(cruces_final.index), cols_a_mostrar_b], use_container_width=True)
-    with tab3: st.dataframe(df_p_show.loc[~df_p.index.isin(cruces_final.index), cols_a_mostrar_p], use_container_width=True)
+    # 2. Cruces últimos 3 (solo donde Estado sea Pendiente)
+    pend_b = df_b_proc[df_b['Estado'] == 'Pendiente']
+    pend_p = df_p_proc[df_p['Estado'] == 'Pendiente']
+    matches3 = pd.merge(pend_b.reset_index(), pend_p.reset_index(), on=['Ref3', 'Monto_Limpio'], suffixes=('_B', '_P'))
+    
+    df_b.loc[matches3['index_B'], 'Estado'] = 'Conciliado'
+    df_p.loc[matches3['index_P'], 'Estado'] = 'Conciliado'
+
+    # Mostrar resultados: Todo sigue ahí, solo filtrado por estado
+    tab1, tab2, tab3 = st.tabs(["✅ Todos los movimientos", "🏦 Pendientes Banco", "💻 Pendientes Profit"])
+    
+    with tab1: st.dataframe(pd.concat([df_b.assign(Origen='Banco'), df_p.assign(Origen='Profit')]), use_container_width=True)
+    with tab2: st.dataframe(df_b[df_b['Estado'] == 'Pendiente'], use_container_width=True)
+    with tab3: st.dataframe(df_p[df_p['Estado'] == 'Pendiente'], use_container_width=True)
 
     # Descarga
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        cruces_show.to_excel(writer, sheet_name='Conciliados', index=False)
-        df_b_show.loc[~df_b.index.isin(cruces_final.index), cols_a_mostrar_b].to_excel(writer, sheet_name='Solo_Banco', index=False)
-        df_p_show.loc[~df_p.index.isin(cruces_final.index), cols_a_mostrar_p].to_excel(writer, sheet_name='Solo_Profit', index=False)
-    st.download_button("📥 Descargar Conciliación Limpia", data=output.getvalue(), file_name="Conciliacion_Final.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        pd.concat([df_b.assign(Origen='Banco'), df_p.assign(Origen='Profit')]).to_excel(writer, sheet_name='Todos_Movimientos', index=False)
+    st.download_button("📥 Descargar Conciliación Completa (Con Estados)", data=output.getvalue(), file_name="Conciliacion_Completa.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 st.markdown('<div class="footer"><p>© 2026 | Sistema Automatizado de Conciliación Bancaria — Creado por Olgleidys Hernández ✨</p></div>', unsafe_allow_html=True)
