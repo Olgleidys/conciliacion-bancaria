@@ -25,7 +25,7 @@ with st.expander("📖 Instrucciones de uso"):
     2. Cargue el archivo del estado de cuenta bancario en formato `.csv`.
     3. Cargue el reporte de Profit Plus en formato `.csv`.
     4. El sistema procesará automáticamente los cruces (por referencia exacta y por los últimos 3 dígitos) y detectará duplicados en Profit.
-    5. Visualice los resultados en pantalla y descargue el reporte limpio en Excel con el nombre personalizado.
+    5. Visualice los resultados por pestañas y descargue el reporte limpio en Excel con el nombre personalizado.
     """)
 
 # --- UI DE CONFIGURACIÓN Y CARGA ---
@@ -103,7 +103,7 @@ if banco_file and profit_file:
   df_p["Es_Duplicado"] = df_p_proc["Es_Duplicado"]
   df_p_duplicados = df_p[df_p["Es_Duplicado"]].copy()
 
-  # Guardar índices originales para mapear después sin alterar nombres de columnas
+  # Guardar índices originales para mapear después
   df_b_proc["orig_idx"] = df_b_proc.index
   df_p_proc["orig_idx"] = df_p_proc.index
 
@@ -129,9 +129,12 @@ if banco_file and profit_file:
   todos_idx_b = pd.concat([idx_b_1, idx_b_2])
   todos_idx_p = pd.concat([idx_p_1, idx_p_2])
 
-  # Construcción final preservando los nombres originales exactos de las columnas
+  # Separar Conciliados y Pendientes
   df_b_conciliados = df_b.loc[todos_idx_b].reset_index(drop=True)
   df_p_conciliados = df_p.loc[todos_idx_p].reset_index(drop=True)
+
+  df_b_pendientes = df_b.loc[~df_b.index.isin(todos_idx_b)].reset_index(drop=True)
+  df_p_pendientes = df_p.loc[~df_p.index.isin(todos_idx_p)].reset_index(drop=True)
 
   cruce_final_display = pd.concat(
       [
@@ -141,8 +144,19 @@ if banco_file and profit_file:
       axis=1,
   )
 
-  st.subheader("✅ Movimientos Conciliados")
-  st.dataframe(cruce_final_display, use_container_width=True)
+  # --- PESTAÑAS DE VISUALIZACIÓN ---
+  tab1, tab2, tab3 = st.tabs(
+      ["✅ Movimientos Conciliados", "🏦 Pendientes Banco", "💻 Pendientes Profit"]
+  )
+
+  with tab1:
+    st.dataframe(cruce_final_display, use_container_width=True)
+
+  with tab2:
+    st.dataframe(df_b_pendientes, use_container_width=True)
+
+  with tab3:
+    st.dataframe(df_p_pendientes, use_container_width=True)
 
   # --- SECCIÓN DE DUPLICADOS EN PROFIT ---
   if not df_p_duplicados.empty:
@@ -156,17 +170,23 @@ if banco_file and profit_file:
   # --- NOMBRE DINÁMICO PARA EL ARCHIVO EXCEL ---
   nombre_archivo = f"Conciliacion_{empresa}_{banco}_{frecuencia}_{mes}_{ano}.xlsx"
 
-  # --- DESCARGA ---
+  # --- DESCARGA (Corregido a engine='openpyxl') ---
   output = io.BytesIO()
-  with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+  with pd.ExcelWriter(output, engine="openpyxl") as writer:
     cruce_final_display.to_excel(writer, index=False, sheet_name="Conciliados")
+    df_b_pendientes.to_excel(
+        writer, index=False, sheet_name="Pendientes_Banco"
+    )
+    df_p_pendientes.to_excel(
+        writer, index=False, sheet_name="Pendientes_Profit"
+    )
     if not df_p_duplicados.empty:
       df_p_duplicados[cols_dup_show].to_excel(
           writer, index=False, sheet_name="Duplicados_Profit"
       )
 
   st.download_button(
-      "📥 Descargar Reporte Limpio",
+      "📥 Descargar Reporte Completo",
       data=output.getvalue(),
       file_name=nombre_archivo,
   )
