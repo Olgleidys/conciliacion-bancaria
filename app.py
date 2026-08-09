@@ -11,11 +11,22 @@ custom_css = """
     h1, h2, h3 { color: #ffffff !important; }
     div[data-testid="stMetricValue"] { color: #00b4d8 !important; }
     .stDownloadButton button { background-color: #0077b6 !important; color: white !important; }
+    .footer { position: fixed; left: 0; bottom: 0; width: 100%; background-color: #0b132b; color: #bcbed8; text-align: center; padding: 10px; font-size: 14px; border-top: 2px solid #0077b6; }
     </style>
 """
 st.markdown(custom_css, unsafe_allow_html=True)
 
 st.title("📊 Sistema Automatizado de Conciliación Bancaria")
+
+# --- INSTRUCCIONES DE USO ---
+with st.expander("📖 Instrucciones de uso"):
+  st.markdown("""
+    1. Seleccione la empresa, el banco correspondiente, la frecuencia, el mes y el año.
+    2. Cargue el archivo del estado de cuenta bancario en formato `.csv`.
+    3. Cargue el reporte de Profit Plus en formato `.csv`.
+    4. El sistema procesará automáticamente los cruces (por referencia exacta y por los últimos 3 dígitos) y detectará duplicados en Profit.
+    5. Visualice los resultados en pantalla y descargue el reporte limpio en Excel con el nombre personalizado.
+    """)
 
 # --- UI DE CONFIGURACIÓN Y CARGA ---
 c1, c2 = st.columns(2)
@@ -162,3 +173,9 @@ if banco_file and profit_file:
 
 else:
   st.info("Cargue ambos archivos para proceder con la conciliación.")
+
+st.markdown(
+    '<div class="footer"><p>© 2026 | Sistema Automatizado de Conciliación'
+    " Bancaria — Creado por Lic. Olgleidys Hernández ✨</p></div>",
+    unsafe_allow_html=True,
+)
