@@ -67,13 +67,17 @@ profit_file = b2.file_uploader("📥 Reporte de Profit Plus (.csv)", type=["csv"
 
 
 def limpiar_monto(serie):
-  return pd.to_numeric(
-      serie.astype(str)
-      .str.replace(".", "", regex=False)
-      .str.replace(",", ".", regex=False)
-      .str.strip(),
-      errors="coerce",
-  ).fillna(0)
+  return (
+      pd.to_numeric(
+          serie.astype(str)
+          .str.replace(".", "", regex=False)
+          .str.replace(",", ".", regex=False)
+          .str.strip(),
+          errors="coerce",
+      )
+      .fillna(0)
+      .abs()
+  )
 
 
 if banco_file and profit_file:
@@ -94,7 +98,6 @@ if banco_file and profit_file:
         inplace=True,
     )
     df["Monto"] = limpiar_monto(df["Monto"])
-    # Limpieza estricta de referencias (elimina decimales .0 y espacios)
     df["Ref"] = (
         df["Ref"]
         .fillna("")
@@ -121,7 +124,6 @@ if banco_file and profit_file:
   idx_b_1 = cruce_1["orig_idx_B_proc"]
   idx_p_1 = cruce_1["orig_idx_P_proc"]
 
-  # Generar Ref3 solo con valores válidos
   df_b_proc["Ref3"] = df_b_proc["Ref"].str[-3:]
   df_p_proc["Ref3"] = df_p_proc["Ref"].str[-3:]
 
