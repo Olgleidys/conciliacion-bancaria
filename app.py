@@ -94,7 +94,14 @@ if banco_file and profit_file:
         inplace=True,
     )
     df["Monto"] = limpiar_monto(df["Monto"])
-    df["Ref"] = df["Ref"].fillna("").astype(str).str.strip()
+    # Limpieza estricta de referencias (elimina decimales .0 y espacios)
+    df["Ref"] = (
+        df["Ref"]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+        .str.replace(r"\.0$", "", regex=True)
+    )
 
   # --- IDENTIFICAR DUPLICADOS EN PROFIT ---
   df_p_proc["Es_Duplicado"] = df_p_proc.duplicated(
@@ -114,11 +121,16 @@ if banco_file and profit_file:
   idx_b_1 = cruce_1["orig_idx_B_proc"]
   idx_p_1 = cruce_1["orig_idx_P_proc"]
 
+  # Generar Ref3 solo con valores válidos
   df_b_proc["Ref3"] = df_b_proc["Ref"].str[-3:]
   df_p_proc["Ref3"] = df_p_proc["Ref"].str[-3:]
 
-  rest_b = df_b_proc[~df_b_proc["orig_idx"].isin(idx_b_1)]
-  rest_p = df_p_proc[~df_p_proc["orig_idx"].isin(idx_p_1)]
+  rest_b = df_b_proc[
+      (~df_b_proc["orig_idx"].isin(idx_b_1)) & (df_b_proc["Ref3"] != "")
+  ]
+  rest_p = df_p_proc[
+      (~df_p_proc["orig_idx"].isin(idx_p_1)) & (df_p_proc["Ref3"] != "")
+  ]
 
   cruce_2 = pd.merge(
       rest_b, rest_p, on=["Ref3", "Monto"], suffixes=("_B_proc", "_P_proc")
@@ -170,7 +182,7 @@ if banco_file and profit_file:
   # --- NOMBRE DINÁMICO PARA EL ARCHIVO EXCEL ---
   nombre_archivo = f"Conciliacion_{empresa}_{banco}_{frecuencia}_{mes}_{ano}.xlsx"
 
-  # --- DESCARGA (Corregido a engine='openpyxl') ---
+  # --- DESCARGA ---
   output = io.BytesIO()
   with pd.ExcelWriter(output, engine="openpyxl") as writer:
     cruce_final_display.to_excel(writer, index=False, sheet_name="Conciliados")
