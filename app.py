@@ -194,12 +194,11 @@ if banco_file and profit_file:
 
   df_p_proc["Observacion_Error"] = df_p_proc.apply(obtener_observacion, axis=1)
   
-  # DataFrame exclusivo de errores humanos en Profit
-  df_p_duplicados = df_p_proc[df_p_proc["Observacion_Error"] != "Normal"].copy()
-  df_p_duplicados_original = df_p.loc[df_p_duplicados.index].copy()
-  df_p_duplicados_original["Observacion"] = df_p_duplicados["Observacion_Error"]
+  # DataFrame exclusivo de errores humanos en Profit basado en df_p_proc
+  df_p_duplicados_original = df_p_proc[df_p_proc["Observacion_Error"] != "Normal"].copy()
+  df_p_duplicados_original.rename(columns={"Observacion_Error": "Observacion"}, inplace=True)
   
-  # Ordenar por Referencia para mejor lectura
+  # Ordenar por Referencia para mejor lectura y agrupar visualmente
   df_p_duplicados_original = df_p_duplicados_original.sort_values(by="Ref")
 
   # --- CRUCE 1: INGRESOS CORRECTOS (Banco Crédito ↔ Profit Debe) ---
@@ -359,6 +358,6 @@ else:
 
 st.markdown(
     '<div class="footer"><p>© 2026 | Sistema Automatizado de Conciliación'
-    " Bancaria — Creado por Lic. Olgleidys Hernández ✨</p></div>",
+    " Bancaria — Creado por Lic. Olgleidys Hernández 👩‍💻✨</p></div>",
     unsafe_allow_html=True,
 )
