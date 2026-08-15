@@ -198,6 +198,9 @@ if banco_file and profit_file:
   df_p_duplicados = df_p_proc[df_p_proc["Observacion_Error"] != "Normal"].copy()
   df_p_duplicados_original = df_p.loc[df_p_duplicados.index].copy()
   df_p_duplicados_original["Observacion"] = df_p_duplicados["Observacion_Error"]
+  
+  # Ordenar por Referencia para mejor lectura
+  df_p_duplicados_original = df_p_duplicados_original.sort_values(by="Ref")
 
   # --- CRUCE 1: INGRESOS CORRECTOS (Banco Crédito ↔ Profit Debe) ---
   b_cred = df_b_proc[df_b_proc["Credito"] > 0].copy()
@@ -321,7 +324,6 @@ if banco_file and profit_file:
       st.subheader(
           "⚠️ Registros Duplicados y Errores Humanos Detectados en Profit"
       )
-      cols_dup_show = [c for c in df_p_duplicados_original.columns if c != "Monto_Total_Duplicidad"]
       st.dataframe(df_p_duplicados_original, use_container_width=True)
     else:
       st.success("No se detectaron duplicados ni errores humanos en Profit.")
