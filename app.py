@@ -4,7 +4,7 @@ import streamlit as st
 import itertools
 
 # --- CONFIGURACIÓN Y ESTILOS ---
-st.set_page_config(page_title="Conciliación Bancaria", layout="wide")
+st.set_page_config(page_title="Sistema de Conciliación Bancaria", layout="wide")
 custom_css = """
     <style>
     .stApp { background-color: #0d1b2a; color: #e0e1dd; }
@@ -16,16 +16,6 @@ custom_css = """
 st.markdown(custom_css, unsafe_allow_html=True)
 
 st.title("📊 Sistema Automatizado de Conciliación Bancaria")
-
-# --- INSTRUCCIONES DE USO ---
-with st.expander("📖 Instrucciones de uso"):
-    st.markdown("""
-    1. **Configuración:** Selecciona la empresa, el banco, la frecuencia, el mes y el año.
-    2. **Carga de Archivos:** Sube el estado de cuenta bancario y el reporte de Profit Plus en `.xlsx`.
-    3. **Procesamiento:** El sistema cruza por referencia exacta, por los últimos 3 dígitos, sumatorias y cruces Debe/Haber.
-    4. **Resultados:** Navega por las 5 pestañas: Todo lo Conciliado, Pendiente Banco, Pendiente Profit, Cruces Debe/Haber, Duplicados y Errores.
-    5. **Exportación:** Al final de la página, usa el botón para descargar toda la conciliación en un solo Excel.
-    """)
 
 # --- UI CONFIGURACIÓN ---
 c1, c2 = st.columns(2)
@@ -83,16 +73,16 @@ def normalizar_archivo(file, tipo):
 
     return df
 
-def cuatro_digitos_consecutivos(m1, m2):
-    """Verifica si dos montos comparten al menos 4 números consecutivos exactos."""
+def tres_digitos_consecutivos(m1, m2):
+    """Verifica si dos montos comparten al menos 3 números consecutivos exactos."""
     s1 = str(abs(m1)).replace('.', '')
     s2 = str(abs(m2)).replace('.', '')
-    if len(s1) < 4 or len(s2) < 4: return False
-    for i in range(len(s1) - 3):
-        if s1[i:i+4] in s2: return True
+    if len(s1) < 3 or len(s2) < 3: return False
+    for i in range(len(s1) - 2):
+        if s1[i:i+3] in s2: return True
     return False
 
-# --- CARGA ---
+# --- CARGA DE ARCHIVOS ---
 f_b, f_p = st.columns(2)
 file_b = f_b.file_uploader("📥 Estado de Cuenta (Banco)", type=["xlsx", "xls"])
 file_p = f_p.file_uploader("📥 Reporte Profit", type=["xlsx", "xls"])
@@ -109,48 +99,56 @@ if file_b and file_p:
     
     conciliados = pd.DataFrame()
     
-    # 1. CRUCE EXACTO
+    # -------------------------------------------------------------
+    # REGLA 1: Conciliar todo lo que cruza correctamente (Exacto)
+    # -------------------------------------------------------------
     cruce_1 = pd.merge(b_valid, p_valid, left_on=["Ref", "Monto_Final"], right_on=["Ref", "Monto_Final"], suffixes=("_Banco", "_Profit"))
     if not cruce_1.empty:
-        cruce_1["Tipo_Cruce"] = "Exacto"
+        cruce_1["Tipo_Cruce"] = "1. Exacto (Ref y Monto)"
         conciliados = pd.concat([conciliados, cruce_1], ignore_index=True)
         b_valid = b_valid[~b_valid["ID_B"].isin(cruce_1["ID_B"])]
         p_valid = p_valid[~p_valid["ID_P"].isin(cruce_1["ID_P"])]
 
-    # 2. CRUCE ÚLTIMOS 3 DÍGITOS
+    # -------------------------------------------------------------
+    # REGLA 2: Conciliar últimos 3 dígitos de referencia y monto iguales
+    # -------------------------------------------------------------
     cruce_2 = pd.merge(b_valid, p_valid, left_on=["Ref_3", "Monto_Final"], right_on=["Ref_3", "Monto_Final"], suffixes=("_Banco", "_Profit"))
     if not cruce_2.empty:
         cruce_2 = cruce_2.drop_duplicates(subset=["ID_B"]).drop_duplicates(subset=["ID_P"])
-        cruce_2["Tipo_Cruce"] = "Últimos 3 Dígitos"
+        cruce_2["Tipo_Cruce"] = "2. Últimos 3 Dígitos y Monto"
         conciliados = pd.concat([conciliados, cruce_2], ignore_index=True)
         b_valid = b_valid[~b_valid["ID_B"].isin(cruce_2["ID_B"])]
         p_valid = p_valid[~p_valid["ID_P"].isin(cruce_2["ID_P"])]
 
-    # 3. CRUCE POR SUMATORIA DE PROFIT
+    # -------------------------------------------------------------
+    # REGLA 3: Sumatoria de Profit con mismos últimos 3 dígitos igual a Banco
+    # -------------------------------------------------------------
     agrupado_p = p_valid.groupby("Ref_3")["Monto_Final"].sum().reset_index()
     cruce_3_banco = pd.merge(b_valid, agrupado_p, left_on=["Ref_3", "Monto_Final"], right_on=["Ref_3", "Monto_Final"])
     
     filas_cruce_3 = []
+    ids_p_a_remover = []
     for _, row in cruce_3_banco.iterrows():
         filas_p = p_valid[p_valid["Ref_3"] == row["Ref_3"]]
         for _, fila_p in filas_p.iterrows():
             combinada = row.to_dict()
             combinada.update({k+"_Profit": v for k, v in fila_p.items()})
-            combinada["Tipo_Cruce"] = "Sumatoria 3 Dígitos"
+            combinada["Tipo_Cruce"] = "3. Sumatoria Profit (3 Dígitos)"
             filas_cruce_3.append(combinada)
+            ids_p_a_remover.append(fila_p["ID_P"])
             
         b_valid = b_valid[b_valid["ID_B"] != row["ID_B"]]
-        p_valid = p_valid[p_valid["Ref_3"] != row["Ref_3"]]
         
     if filas_cruce_3:
-        df_cruce_3 = pd.DataFrame(filas_cruce_3)
+        df_cruce_3 = pd.DataFrame(filas_cruce_3).drop_duplicates(subset=["ID_B"])
         conciliados = pd.concat([conciliados, df_cruce_3], ignore_index=True)
+        p_valid = p_valid[~p_valid["ID_P"].isin(ids_p_a_remover)]
 
     # PENDIENTES
     pendientes_b = pd.concat([b_valid, df_b[df_b["Ref"] == ""]], ignore_index=True)
     pendientes_p = pd.concat([p_valid, df_p[df_p["Ref"] == ""]], ignore_index=True)
 
-    # --- CRUCES DEBE / HABER (Específico: Debe en Profit con Débito en Banco o Haber con Crédito) ---
+    # --- CRUCES DEBE / HABER ---
     cruce_dh_merge = pd.merge(df_b[df_b["Ref"] != ""], df_p[df_p["Ref"] != ""], on="Ref", suffixes=("_Banco", "_Profit"))
     if not cruce_dh_merge.empty:
         mask_dh = (
@@ -162,39 +160,44 @@ if file_b and file_p:
     else:
         cruces_debe_haber = pd.DataFrame()
 
-    # --- DUPLICADOS Y ERRORES ---
+    # -------------------------------------------------------------
+    # REGLAS 4, 5 y 6: DUPLICADOS Y ERRORES
+    # -------------------------------------------------------------
     alertas = []
+    
     df_b_chk = df_b.copy()
     df_p_chk = df_p.copy()
     df_b_chk["Monto_Abs"] = df_b_chk["Monto_Final"].abs()
     df_p_chk["Monto_Abs"] = df_p_chk["Monto_Final"].abs()
 
-    # 4. Duplicados exactos
-    dup_b_exact = df_b_chk[df_b_chk.duplicated(subset=["Ref", "Monto_Abs"], keep=False) & (df_b_chk["Ref"] != "")]
-    if not dup_b_exact.empty: alertas.append(dup_b_exact.assign(Alerta="Duplicado Exacto Banco"))
+    # REGLA 4: Duplicados exactos (Mismo número de referencia y monto)
+    dup_b_ex = df_b_chk[df_b_chk.duplicated(subset=["Ref", "Monto_Abs"], keep=False) & (df_b_chk["Ref"] != "")]
+    if not dup_b_ex.empty: alertas.append(dup_b_ex.assign(Alerta="4. Duplicado Exacto (Banco)"))
     
-    dup_p_exact = df_p_chk[df_p_chk.duplicated(subset=["Ref", "Monto_Abs"], keep=False) & (df_p_chk["Ref"] != "")]
-    if not dup_p_exact.empty: alertas.append(dup_p_exact.assign(Alerta="Duplicado Exacto Profit"))
+    dup_p_ex = df_p_chk[df_p_chk.duplicated(subset=["Ref", "Monto_Abs"], keep=False) & (df_p_chk["Ref"] != "")]
+    if not dup_p_ex.empty: alertas.append(dup_p_ex.assign(Alerta="4. Duplicado Exacto (Profit)"))
 
-    # 5. Duplicados por últimos 3 dígitos
-    dup_b_3 = df_b_chk[df_b_chk.duplicated(subset=["Ref_3", "Monto_Abs"], keep=False) & (df_b_chk["Ref"] != "") & (~df_b_chk.index.isin(dup_b_exact.index))]
-    if not dup_b_3.empty: alertas.append(dup_b_3.assign(Alerta="Duplicado 3 Dígitos Banco"))
+    # REGLA 5: Duplicados con mismos últimos 3 dígitos de referencia y monto iguales
+    dup_b_3 = df_b_chk[df_b_chk.duplicated(subset=["Ref_3", "Monto_Abs"], keep=False) & (df_b_chk["Ref"] != "") & (~df_b_chk.index.isin(dup_b_ex.index))]
+    if not dup_b_3.empty: alertas.append(dup_b_3.assign(Alerta="5. Duplicado por Últimos 3 Dígitos (Banco)"))
     
-    dup_p_3 = df_p_chk[df_p_chk.duplicated(subset=["Ref_3", "Monto_Abs"], keep=False) & (df_p_chk["Ref"] != "") & (~df_p_chk.index.isin(dup_p_exact.index))]
-    if not dup_p_3.empty: alertas.append(dup_p_3.assign(Alerta="Duplicado 3 Dígitos Profit"))
+    dup_p_3 = df_p_chk[df_p_chk.duplicated(subset=["Ref_3", "Monto_Abs"], keep=False) & (df_p_chk["Ref"] != "") & (~df_p_chk.index.isin(dup_p_ex.index))]
+    if not dup_p_3.empty: alertas.append(dup_p_3.assign(Alerta="5. Duplicado por Últimos 3 Dígitos (Profit)"))
 
-    # 6. Errores de digitación (consecutivos)
+    # REGLA 6: Misma referencia, montos diferentes pero con al menos 3 números consecutivos iguales (Marcado en Rojo)
     for name, group in df_b_chk[df_b_chk["Ref"] != ""].groupby("Ref"):
         if len(group) > 1:
             for idx1, idx2 in itertools.combinations(group.index, 2):
-                if cuatro_digitos_consecutivos(group.loc[idx1, "Monto_Abs"], group.loc[idx2, "Monto_Abs"]):
-                    alertas.append(group.loc[[idx1, idx2]].assign(Alerta="Error Digitacion Banco (Consecutivos)"))
+                m1, m2 = group.loc[idx1, "Monto_Abs"], group.loc[idx2, "Monto_Abs"]
+                if m1 != m2 and tres_digitos_consecutivos(m1, m2):
+                    alertas.append(group.loc[[idx1, idx2]].assign(Alerta="6. Error Digitación (Misma Ref, 3 Dígitos Consecutivos)"))
 
     for name, group in df_p_chk[df_p_chk["Ref"] != ""].groupby("Ref"):
         if len(group) > 1:
             for idx1, idx2 in itertools.combinations(group.index, 2):
-                if cuatro_digitos_consecutivos(group.loc[idx1, "Monto_Abs"], group.loc[idx2, "Monto_Abs"]):
-                    alertas.append(group.loc[[idx1, idx2]].assign(Alerta="Error Digitacion Profit (Consecutivos)"))
+                m1, m2 = group.loc[idx1, "Monto_Abs"], group.loc[idx2, "Monto_Abs"]
+                if m1 != m2 and tres_digitos_consecutivos(m1, m2):
+                    alertas.append(group.loc[[idx1, idx2]].assign(Alerta="6. Error Digitación (Misma Ref, 3 Dígitos Consecutivos)"))
 
     df_alertas = pd.concat(alertas).drop_duplicates() if alertas else pd.DataFrame()
 
@@ -205,21 +208,19 @@ if file_b and file_p:
     with tabs[1]: st.dataframe(pendientes_b, use_container_width=True)
     with tabs[2]: st.dataframe(pendientes_p, use_container_width=True)
     with tabs[3]: 
-        if not cruces_debe_haber.empty:
-            st.dataframe(cruces_debe_haber, use_container_width=True)
-        else:
-            st.info("No se encontraron cruces directos entre Debe/Débito o Haber/Crédito con los filtros actuales.")
+        if not cruces_debe_haber.empty: st.dataframe(cruces_debe_haber, use_container_width=True)
+        else: st.info("No se encontraron cruces directos Debe/Haber.")
     with tabs[4]: 
         if not df_alertas.empty:
-            def highlight_errors(val):
-                return 'background-color: #780000; color: white' if 'Error Digitacion' in str(val) else ''
+            def highlight_rule6(val):
+                return 'background-color: #780000; color: white' if '6.' in str(val) else 'background-color: #b7094c; color: white'
             
             if hasattr(df_alertas.style, 'map'):
-                st.dataframe(df_alertas.style.map(highlight_errors, subset=['Alerta']), use_container_width=True)
+                st.dataframe(df_alertas.style.map(highlight_rule6, subset=['Alerta']), use_container_width=True)
             else:
-                st.dataframe(df_alertas.style.applymap(highlight_errors, subset=['Alerta']), use_container_width=True)
+                st.dataframe(df_alertas.style.applymap(highlight_rule6, subset=['Alerta']), use_container_width=True)
         else:
-            st.success("No se detectaron duplicados ni errores con los filtros actuales.")
+            st.success("No se detectaron duplicados ni errores de digitación con los filtros actuales.")
 
     # --- BOTÓN DE DESCARGA EN EXCEL ---
     st.markdown("---")
