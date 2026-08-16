@@ -38,25 +38,58 @@ ano = p3.selectbox("📅 Año:", ["2026", "2027", "2028"])
 
 # --- FUNCIONES DE LIMPIEZA Y LÓGICA ---
 def limpiar_monto(serie):
-    return pd.to_numeric(serie.astype(str).str.replace(".", "", regex=False).str.replace(",", ".", regex=False).str.strip(), errors="coerce").fillna(0.0).round(2)
+    if serie is None:
+        return pd.Series(0.0, index=range(len(serie))) if hasattr(serie, '__len__') else 0.0
+    return pd.to_numeric(
+        serie.astype(str).str.replace(".", "", regex=False).str.replace(",", ".", regex=False).str.strip(), 
+        errors="coerce"
+    ).fillna(0.0).round(2)
 
-def normalizar(file):
+def normalizar_archivo(file, tipo):
     df = pd.read_excel(file, dtype=str)
-    col = next((c for c in df.columns if any(k in c.lower() for k in ["referencia", "ref", "documento", "doc", "nro"])), None)
-    if col: df = df.rename(columns={col: "Ref"})
-    else: df = df.rename(columns={df.columns[1]: "Ref"}) if len(df.columns) > 1 else df
+    # Limpiar nombres de columnas (quitar espacios y llevar a minúsculas)
+    df.columns = df.columns.astype(str).str.strip().str.lower()
     
+    # Buscar columna de referencia
+    col_ref = next((c for c in df.columns if any(k in c for k in ["referencia", "ref", "documento", "doc", "nro"])), None)
+    if not col_ref:
+        col_ref = df.columns[1] if len(df.columns) > 1 else df.columns[0]
+    
+    df = df.rename(columns={col_ref: "Ref"})
     df["Ref"] = df["Ref"].fillna("").astype(str).str.replace(r"\.0$", "", regex=True).str.strip()
-    # Blanquear si tiene 2 dígitos o menos (error de dedo) para no conciliar ni duplicar
+    
+    # Blanquear si tiene 2 dígitos o menos (error de dedo)
     df["Ref"] = df["Ref"].apply(lambda x: "" if len(x) <= 2 else x)
     df["Ref_3"] = df["Ref"].apply(lambda x: x[-3:] if len(x) >= 3 else x)
     
+    # Identificar columnas de montos dinámicamente según el tipo de archivo
+    if tipo == "banco":
+        c_deb = next((c for c in df.columns if "deb" in c), None)
+        c_cred = next((c for c in df.columns if "cred" in c), None)
+        
+        val_deb = limpiar_monto(df[c_deb]) if c_deb else 0.0
+        val_cred = limpiar_monto(df[c_cred]) if c_cred else 0.0
+        
+        df["Monto_Final"] = val_cred - val_deb # Positivo abono, negativo cargo
+        df["Debito_Lim"] = val_deb
+        df["Credito_Lim"] = val_cred
+    else: # profit
+        c_deb = next((c for c in df.columns if "debe" in c), None)
+        c_hab = next((c for c in df.columns if "haber" in c), None)
+        
+        val_debe = limpiar_monto(df[c_deb]) if c_deb else 0.0
+        val_hab = limpiar_monto(df[c_hab]) if c_hab else 0.0
+        
+        df["Monto_Final"] = val_debe - val_hab # Positivo debe, negativo haber
+        df["Debe_Lim"] = val_debe
+        df["Haber_Lim"] = val_hab
+
     return df
 
 def cuatro_digitos_consecutivos(m1, m2):
     """Verifica si dos montos comparten al menos 4 números consecutivos exactos."""
-    s1 = str(m1).replace('.', '').replace('-', '')
-    s2 = str(m2).replace('.', '').replace('-', '')
+    s1 = str(abs(m1)).replace('.', '')
+    s2 = str(abs(m2)).replace('.', '')
     if len(s1) < 4 or len(s2) < 4: return False
     for i in range(len(s1) - 3):
         if s1[i:i+4] in s2: return True
@@ -68,14 +101,8 @@ file_b = f_b.file_uploader("📥 Estado de Cuenta (Banco)", type=["xlsx", "xls"]
 file_p = f_p.file_uploader("📥 Reporte Profit", type=["xlsx", "xls"])
 
 if file_b and file_p:
-    df_b = normalizar(file_b)
-    df_p = normalizar(file_p)
-    
-    deb_b, cred_b = df_b.columns[3], df_b.columns[4]
-    deb_p, cred_p = df_p.columns[3], df_p.columns[4]
-    
-    df_b["Monto_B"] = limpiar_monto(df_b[cred_b]) - limpiar_monto(df_b[deb_b]) # Positivo = Abono, Negativo = Cargo
-    df_p["Monto_P"] = limpiar_monto(df_p[deb_p]) - limpiar_monto(df_p[cred_p]) # Positivo = Debe, Negativo = Haber
+    df_b = normalizar_archivo(file_b, "banco")
+    df_p = normalizar_archivo(file_p, "profit")
     
     df_b["ID_B"] = df_b.index.astype(str) + "_B"
     df_p["ID_P"] = df_p.index.astype(str) + "_P"
@@ -86,26 +113,26 @@ if file_b and file_p:
     
     conciliados = pd.DataFrame()
     
-    # 1. CRUCE EXACTO (Ref y Monto)
-    cruce_1 = pd.merge(b_valid, p_valid, left_on=["Ref", "Monto_B"], right_on=["Ref", "Monto_P"], suffixes=("_Banco", "_Profit"))
+    # 1. CRUCE EXACTO (Ref y Monto Absoluto o Real)
+    cruce_1 = pd.merge(b_valid, p_valid, left_on=["Ref", "Monto_Final"], right_on=["Ref", "Monto_Final"], suffixes=("_Banco", "_Profit"))
     if not cruce_1.empty:
         cruce_1["Tipo_Cruce"] = "Exacto"
-        conciliados = pd.concat([conciliados, cruce_1])
+        conciliados = pd.concat([conciliados, cruce_1], ignore_index=True)
         b_valid = b_valid[~b_valid["ID_B"].isin(cruce_1["ID_B"])]
         p_valid = p_valid[~p_valid["ID_P"].isin(cruce_1["ID_P"])]
 
     # 2. CRUCE ÚLTIMOS 3 DÍGITOS (Ref_3 y Monto)
-    cruce_2 = pd.merge(b_valid, p_valid, left_on=["Ref_3", "Monto_B"], right_on=["Ref_3", "Monto_P"], suffixes=("_Banco", "_Profit"))
+    cruce_2 = pd.merge(b_valid, p_valid, left_on=["Ref_3", "Monto_Final"], right_on=["Ref_3", "Monto_Final"], suffixes=("_Banco", "_Profit"))
     if not cruce_2.empty:
         cruce_2 = cruce_2.drop_duplicates(subset=["ID_B"]).drop_duplicates(subset=["ID_P"])
         cruce_2["Tipo_Cruce"] = "Últimos 3 Dígitos"
-        conciliados = pd.concat([conciliados, cruce_2])
+        conciliados = pd.concat([conciliados, cruce_2], ignore_index=True)
         b_valid = b_valid[~b_valid["ID_B"].isin(cruce_2["ID_B"])]
         p_valid = p_valid[~p_valid["ID_P"].isin(cruce_2["ID_P"])]
 
-    # 3. CRUCE POR SUMATORIA DE PROFIT (Mismos 3 dígitos, suma exacta en Profit)
-    agrupado_p = p_valid.groupby("Ref_3")["Monto_P"].sum().reset_index()
-    cruce_3_banco = pd.merge(b_valid, agrupado_p, left_on=["Ref_3", "Monto_B"], right_on=["Ref_3", "Monto_P"])
+    # 3. CRUCE POR SUMATORIA DE PROFIT (Mismos 3 dígitos, suma exacta)
+    agrupado_p = p_valid.groupby("Ref_3")["Monto_Final"].sum().reset_index()
+    cruce_3_banco = pd.merge(b_valid, agrupado_p, left_on=["Ref_3", "Monto_Final"], right_on=["Ref_3", "Monto_Final"])
     
     filas_cruce_3 = []
     for _, row in cruce_3_banco.iterrows():
@@ -121,46 +148,47 @@ if file_b and file_p:
         
     if filas_cruce_3:
         df_cruce_3 = pd.DataFrame(filas_cruce_3)
-        conciliados = pd.concat([conciliados, df_cruce_3])
+        conciliados = pd.concat([conciliados, df_cruce_3], ignore_index=True)
 
     # PENDIENTES
-    pendientes_b = pd.concat([b_valid, df_b[df_b["Ref"] == ""]])
-    pendientes_p = pd.concat([p_valid, df_p[df_p["Ref"] == ""]])
+    pendientes_b = pd.concat([b_valid, df_b[df_b["Ref"] == ""]], ignore_index=True)
+    pendientes_p = pd.concat([p_valid, df_p[df_p["Ref"] == ""]], ignore_index=True)
 
     # --- DUPLICADOS Y ERRORES ---
     alertas = []
 
     # 4. Duplicados exactos (Ref y Monto)
-    dup_b_exact = df_b[df_b.duplicated(subset=["Ref", "Monto_B"], keep=False) & (df_b["Ref"] != "")]
+    dup_b_exact = df_b[df_b.duplicated(subset=["Ref", "Monto_Final"], keep=False) & (df_b["Ref"] != "")]
     if not dup_b_exact.empty: alertas.append(dup_b_exact.assign(Alerta="Duplicado Exacto Banco"))
     
-    dup_p_exact = df_p[df_p.duplicated(subset=["Ref", "Monto_P"], keep=False) & (df_p["Ref"] != "")]
+    dup_p_exact = df_p[df_p.duplicated(subset=["Ref", "Monto_Final"], keep=False) & (df_p["Ref"] != "")]
     if not dup_p_exact.empty: alertas.append(dup_p_exact.assign(Alerta="Duplicado Exacto Profit"))
 
     # 5. Duplicados por últimos 3 dígitos y Monto
-    dup_b_3 = df_b[df_b.duplicated(subset=["Ref_3", "Monto_B"], keep=False) & (df_b["Ref"] != "") & (~df_b.index.isin(dup_b_exact.index))]
+    dup_b_3 = df_b[df_b.duplicated(subset=["Ref_3", "Monto_Final"], keep=False) & (df_b["Ref"] != "") & (~df_b.index.isin(dup_b_exact.index))]
     if not dup_b_3.empty: alertas.append(dup_b_3.assign(Alerta="Duplicado 3 Dígitos Banco"))
     
-    dup_p_3 = df_p[df_p.duplicated(subset=["Ref_3", "Monto_P"], keep=False) & (df_p["Ref"] != "") & (~df_p.index.isin(dup_p_exact.index))]
+    dup_p_3 = df_p[df_p.duplicated(subset=["Ref_3", "Monto_Final"], keep=False) & (df_p["Ref"] != "") & (~df_p.index.isin(dup_p_exact.index))]
     if not dup_p_3.empty: alertas.append(dup_p_3.assign(Alerta="Duplicado 3 Dígitos Profit"))
 
     # 6. Misma referencia, distinto monto, pero con 4 números consecutivos iguales
     for name, group in df_b[df_b["Ref"] != ""].groupby("Ref"):
         if len(group) > 1:
             for idx1, idx2 in itertools.combinations(group.index, 2):
-                if cuatro_digitos_consecutivos(group.loc[idx1, "Monto_B"], group.loc[idx2, "Monto_B"]):
+                if cuatro_digitos_consecutivos(group.loc[idx1, "Monto_Final"], group.loc[idx2, "Monto_Final"]):
                     alertas.append(group.loc[[idx1, idx2]].assign(Alerta="Error Digitacion Banco (Consecutivos)"))
 
     for name, group in df_p[df_p["Ref"] != ""].groupby("Ref"):
         if len(group) > 1:
             for idx1, idx2 in itertools.combinations(group.index, 2):
-                if cuatro_digitos_consecutivos(group.loc[idx1, "Monto_P"], group.loc[idx2, "Monto_P"]):
+                if cuatro_digitos_consecutivos(group.loc[idx1, "Monto_Final"], group.loc[idx2, "Monto_Final"]):
                     alertas.append(group.loc[[idx1, idx2]].assign(Alerta="Error Digitacion Profit (Consecutivos)"))
 
-    df_alertas = pd.concat(alertas).drop_duplicates(subset=["ID_B" if "ID_B" in df_alertas.columns else "ID_P", "Alerta"]) if alertas else pd.DataFrame()
+    df_alertas = pd.concat(alertas).drop_duplicates() if alertas else pd.DataFrame()
 
     # Formatear Pestaña Debe/Haber
-    cruces_debe_haber = conciliados[["Ref", "Ref_3", "Monto_B", "Monto_P", "Tipo_Cruce"]].copy() if not conciliados.empty else pd.DataFrame()
+    cols_dh = [c for c in ["Ref", "Ref_3", "Monto_Final", "Tipo_Cruce"] if c in conciliados.columns]
+    cruces_debe_haber = conciliados[cols_dh].copy() if not conciliados.empty else pd.DataFrame()
 
     # --- RENDERIZADO DE PESTAÑAS ---
     tabs = st.tabs(["✅ Todo lo Conciliado", "🏦 Pendiente Banco", "💻 Pendiente Profit", "🔄 Cruces Debe/Haber", "⚠️ Duplicados y Errores"])
@@ -171,23 +199,20 @@ if file_b and file_p:
     with tabs[3]: st.dataframe(cruces_debe_haber, use_container_width=True)
     with tabs[4]: 
         if not df_alertas.empty:
-            # Resaltar en rojo los errores de digitación
             def highlight_errors(val):
                 return 'background-color: #780000; color: white' if 'Error Digitacion' in str(val) else ''
             
-            # Soporte para versiones recientes y antiguas de pandas
             if hasattr(df_alertas.style, 'map'):
                 st.dataframe(df_alertas.style.map(highlight_errors, subset=['Alerta']), use_container_width=True)
             else:
                 st.dataframe(df_alertas.style.applymap(highlight_errors, subset=['Alerta']), use_container_width=True)
         else:
-            st.success("No se detectaron duplicados ni errores de digitación.")
+            st.success("No se detectaron duplicados ni errores de digitación con los filtros actuales.")
 
     # --- BOTÓN DE DESCARGA EN EXCEL ---
     st.markdown("---")
     output = io.BytesIO()
     
-    # Motor cambiado a openpyxl para evitar el error de ModuleNotFoundError
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
         if not conciliados.empty: conciliados.to_excel(writer, sheet_name="Conciliado", index=False)
         pendientes_b.to_excel(writer, sheet_name="Pendiente Banco", index=False)
