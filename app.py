@@ -39,20 +39,49 @@ ano = p3.selectbox("📅 Año:", ["2026", "2027", "2028"])
 
 # --- FUNCIONES ---
 def limpiar_monto(serie):
-    return pd.to_numeric(serie.astype(str).str.replace(".", "", regex=False).str.replace(",", ".", regex=False).str.strip(), errors="coerce").fillna(0.0).round(2)
+    if serie is None or not hasattr(serie, 'astype'):
+        return pd.Series(0.0, index=range(len(serie))) if hasattr(serie, '__len__') else 0.0
+    return pd.to_numeric(
+        serie.astype(str).str.replace(".", "", regex=False).str.replace(",", ".", regex=False).str.strip(), 
+        errors="coerce"
+    ).fillna(0.0).round(2)
 
 def normalizar_archivo(file, tipo):
     df = pd.read_excel(file, dtype=str)
-    df.columns = df.columns.astype(str).str.strip().str.lower()
-    col_ref = next((c for c in df.columns if any(k in c for k in ["referencia", "ref", "doc"])), df.columns[0])
+    df.columns = df.columns.astype(str).str.strip()
+    
+    # Mapeo insensible a mayúsculas/minúsculas pero exigiendo los nombres exactos requeridos
+    cols_lower = {c.lower(): c for c in df.columns}
+    
+    if tipo == "banco":
+        esperadas = ["fecha", "referencia", "descripcion", "debito", "credito"]
+    else:
+        esperadas = ["fecha", "referencia", "descripcion", "debe", "haber"]
+        
+    mapeo = {}
+    for esp in esperadas:
+        match = next((cols_lower[c] for c in cols_lower if c == esp), None)
+        if match:
+            mapeo[match] = esp
+            
+    df = df.rename(columns=mapeo)
+    
+    # Definir columna de referencia estándar para el sistema
+    col_ref = "referencia" if "referencia" in df.columns else df.columns[0]
     df = df.rename(columns={col_ref: "Ref"})
     df["Ref"] = df["Ref"].apply(lambda x: str(x).strip().replace(".0", ""))
+    df["Ref"] = df["Ref"].apply(lambda x: "" if x.lower() == "nan" else x)
     df["Ref_3"] = df["Ref"].apply(lambda x: x[-3:] if len(x) >= 3 else x)
     
     if tipo == "banco":
-        df["Monto_Final"] = limpiar_monto(df.get("cred", 0)) - limpiar_monto(df.get("deb", 0))
+        val_deb = limpiar_monto(df["debito"]) if "debito" in df.columns else 0.0
+        val_cred = limpiar_monto(df["credito"]) if "credito" in df.columns else 0.0
+        df["Monto_Final"] = val_cred - val_deb
     else:
-        df["Monto_Final"] = limpiar_monto(df.get("debe", 0)) - limpiar_monto(df.get("haber", 0))
+        val_debe = limpiar_monto(df["debe"]) if "debe" in df.columns else 0.0
+        val_haber = limpiar_monto(df["haber"]) if "haber" in df.columns else 0.0
+        df["Monto_Final"] = val_debe - val_haber
+        
     return df
 
 def check_4_digits(m1, m2):
@@ -78,37 +107,46 @@ if file_b and file_p:
 
     # REGLA 1, 2, 3 (Conciliación)
     m1 = pd.merge(pend_b, pend_p, on=["Ref", "Monto_Final"], suffixes=("_B", "_P"))
-    m1["Regla"] = "1. Exacto"
-    conciliados = pd.concat([conciliados, m1])
-    pend_b = pend_b[~pend_b.index.isin(m1.index.get_level_values(0))]
-    pend_p = pend_p[~pend_p.index.isin(m1.index.get_level_values(0))]
+    if not m1.empty:
+        m1["Regla"] = "1. Exacto"
+        conciliados = pd.concat([conciliados, m1])
+        pend_b = pend_b[~pend_b.index.isin(m1.index.get_level_values(0))]
+        pend_p = pend_p[~pend_p.index.isin(m1.index.get_level_values(0))]
 
     m2 = pd.merge(pend_b, pend_p, on=["Ref_3", "Monto_Final"], suffixes=("_B", "_P"))
-    m2["Regla"] = "2. Ref 3 Digitos + Monto"
-    conciliados = pd.concat([conciliados, m2])
-    pend_b = pend_b[~pend_b.index.isin(m2.index.get_level_values(0))]
-    pend_p = pend_p[~pend_p.index.isin(m2.index.get_level_values(0))]
+    if not m2.empty:
+        m2["Regla"] = "2. Ref 3 Digitos + Monto"
+        conciliados = pd.concat([conciliados, m2])
+        pend_b = pend_b[~pend_b.index.isin(m2.index.get_level_values(0))]
+        pend_p = pend_p[~pend_p.index.isin(m2.index.get_level_values(0))]
 
     sumatoria = pend_p.groupby("Ref_3")["Monto_Final"].sum().reset_index()
     m3 = pd.merge(pend_b, sumatoria, on=["Ref_3", "Monto_Final"], suffixes=("_B", "_P"))
-    m3["Regla"] = "3. Sumatoria Profit"
-    conciliados = pd.concat([conciliados, m3])
-    pend_b = pend_b[~pend_b.index.isin(m3.index.get_level_values(0))]
+    if not m3.empty:
+        m3["Regla"] = "3. Sumatoria Profit"
+        conciliados = pd.concat([conciliados, m3])
+        pend_b = pend_b[~pend_b.index.isin(m3.index.get_level_values(0))]
 
     # CRUCE DEBE/HABER
     cruce_dh = pd.merge(df_b, df_p, on="Ref", suffixes=("_B", "_P"))
-    cruce_dh = cruce_dh[(cruce_dh["Monto_Final_B"] == cruce_dh["Monto_Final_P"])]
-    cruce_dh["Regla"] = "Cruce Debe/Haber"
+    if not cruce_dh.empty:
+        cruce_dh = cruce_dh[(cruce_dh["Monto_Final_B"] == cruce_dh["Monto_Final_P"])]
+        cruce_dh["Regla"] = "Cruce Debe/Haber"
+    else:
+        cruce_dh = pd.DataFrame()
 
     # ALERTAS (4, 5, 6)
-    dup_ex = df_b[df_b.duplicated(subset=["Ref", "Monto_Final"], keep=False)]
-    dup_ex["Alerta"] = "4. Duplicado Exacto"
-    alertas = pd.concat([alertas, dup_ex])
+    dup_ex = df_b[df_b.duplicated(subset=["Ref", "Monto_Final"], keep=False) & (df_b["Ref"] != "")]
+    if not dup_ex.empty:
+        dup_ex["Alerta"] = "4. Duplicado Exacto"
+        alertas = pd.concat([alertas, dup_ex])
 
-    dup_3 = df_b[df_b.duplicated(subset=["Ref_3", "Monto_Final"], keep=False)]
-    dup_3["Alerta"] = "5. Duplicado 3 Digitos"
-    alertas = pd.concat([alertas, dup_3])
+    dup_3 = df_b[df_b.duplicated(subset=["Ref_3", "Monto_Final"], keep=False) & (df_b["Ref"] != "")]
+    if not dup_3.empty:
+        dup_3["Alerta"] = "5. Duplicado 3 Digitos"
+        alertas = pd.concat([alertas, dup_3])
 
+    alertas_lista = []
     for ref, group in df_b[df_b["Ref"] != ""].groupby("Ref"):
         if len(group) > 1:
             for i, row1 in group.iterrows():
@@ -116,7 +154,11 @@ if file_b and file_p:
                     if i < j and check_4_digits(row1["Monto_Final"], row2["Monto_Final"]):
                         err = pd.DataFrame([row1, row2])
                         err["Alerta"] = "6. Error 4 Digitos Consecutivos"
-                        alertas = pd.concat([alertas, err])
+                        alertas_lista.append(err)
+                        
+    if alertas_lista:
+        df_errs = pd.concat(alertas_lista)
+        alertas = pd.concat([alertas, df_errs])
 
     # --- PESTAÑAS (5 en total) ---
     tabs = st.tabs(["✅ Conciliado", "🏦 Pendiente Banco", "💻 Pendiente Profit", "🔄 Cruces Debe/Haber", "⚠️ Duplicados y Errores"])
@@ -124,16 +166,16 @@ if file_b and file_p:
     tabs[1].dataframe(pend_b, use_container_width=True)
     tabs[2].dataframe(pend_p, use_container_width=True)
     tabs[3].dataframe(cruce_dh, use_container_width=True)
-    tabs[4].dataframe(alertas.drop_duplicates(), use_container_width=True)
+    tabs[4].dataframe(alertas.drop_duplicates() if not alertas.empty else pd.DataFrame(), use_container_width=True)
 
     # --- DESCARGA ---
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine='openpyxl') as writer:
-        conciliados.to_excel(writer, sheet_name="Conciliado", index=False)
+        if not conciliados.empty: conciliados.to_excel(writer, sheet_name="Conciliado", index=False)
         pend_b.to_excel(writer, sheet_name="Pendiente Banco", index=False)
         pend_p.to_excel(writer, sheet_name="Pendiente Profit", index=False)
-        cruce_dh.to_excel(writer, sheet_name="Cruces DH", index=False)
-        alertas.to_excel(writer, sheet_name="Alertas", index=False)
+        if not cruce_dh.empty: cruce_dh.to_excel(writer, sheet_name="Cruces DH", index=False)
+        if not alertas.empty: alertas.drop_duplicates().to_excel(writer, sheet_name="Alertas", index=False)
     st.download_button("📥 DESCARGAR REPORTE", output.getvalue(), f"Conciliacion_{empresa}_{mes}_{ano}.xlsx")
 
 # --- FOOTER ---
