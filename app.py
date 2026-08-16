@@ -16,14 +16,11 @@ st.markdown("""
 
 st.title("📊 Sistema Automatizado de Conciliación Bancaria")
 
-# --- INSTRUCCIONES ---
 with st.expander("📖 Instrucciones de uso"):
     st.markdown("""
-    1. Seleccione la empresa, el banco, la frecuencia y el periodo.
-    2. Cargue el archivo del estado de cuenta bancario (.csv).
-    3. Cargue el reporte de Profit Plus (.csv).
-    4. El sistema realizará el cruce de datos automáticamente.
-    5. Descarga el archivo completo listo para analizar.
+    1. Seleccione empresa, banco, frecuencia, mes y año.
+    2. Cargue los archivos CSV. 
+    3. Si el archivo tiene filas de encabezado que no son datos, ajusta 'Filas a saltar' para limpiar la carga.
     """)
 
 # --- CONFIGURACIÓN ---
@@ -36,32 +33,32 @@ frecuencia = c3.selectbox("⏱️ Frecuencia:", ["Semanal", "Quincenal", "Mensua
 mes = c4.selectbox("📆 Mes:", ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"])
 ano = c5.selectbox("📅 Año:", list(range(2026, 2030)))
 
-# --- CARGA Y PROCESAMIENTO (CON ENCODING CORREGIDO) ---
+# --- FILTRO DE LECTURA ---
+skip_rows = st.number_input("Filas a saltar (Ajusta si los datos no cargan completos):", min_value=0, value=0, help="Si tu archivo tiene logos o textos en las primeras filas, aumenta este número.")
+
+# --- CARGA Y PROCESAMIENTO ---
 b1, b2 = st.columns(2)
 file_banco = b1.file_uploader("📥 Estado de Cuenta Bancario (.csv)", type="csv")
 file_profit = b2.file_uploader("📥 Reporte de Profit Plus (.csv)", type="csv")
 
 if file_banco and file_profit:
     try:
-        # Usamos latin-1 para solucionar el error de Unicode
-        df_b = pd.read_csv(file_banco, sep=None, engine='python', encoding='latin-1')
-        df_p = pd.read_csv(file_profit, sep=None, engine='python', encoding='latin-1')
+        # Se añade skip_rows para saltar los encabezados basura del banco
+        df_b = pd.read_csv(file_banco, sep=None, engine='python', encoding='latin-1', skiprows=skip_rows)
+        df_p = pd.read_csv(file_profit, sep=None, engine='python', encoding='latin-1', skiprows=skip_rows)
         
-        st.success("Archivos cargados correctamente.")
+        st.success("Archivos cargados. Se están visualizando todas las filas encontradas.")
 
-        # --- PESTAÑAS ---
         tab1, tab2, tab3, tab4, tab5 = st.tabs([
             "✅ Conciliados", "🏦 Pendientes Banco", "💻 Pendientes Profit", 
             "🔄 Inversiones", "⚠️ Duplicados/Errores"
         ])
 
-        tab1.dataframe(df_b.head(10), use_container_width=True)
-        tab2.dataframe(df_b.head(5), use_container_width=True)
-        tab3.dataframe(df_p.head(5), use_container_width=True)
-        tab4.write("Análisis de inversiones (Debe/Haber).")
-        tab5.write("Análisis de duplicados y errores.")
-
-        # --- DESCARGA (ABAJO DE TODO) ---
+        # Mostrar tabla completa (sin .head() para que veas todo)
+        tab1.dataframe(df_b, use_container_width=True)
+        tab2.dataframe(df_b, use_container_width=True)
+        tab3.dataframe(df_p, use_container_width=True)
+        
         st.divider()
         st.subheader("📥 Exportación Final")
         output = io.BytesIO()
@@ -75,8 +72,7 @@ if file_banco and file_profit:
             file_name=f"Conciliacion {empresa} {banco} {mes} {ano}.xlsx"
         )
     except Exception as e:
-        st.error(f"Error al procesar el archivo: {e}. Por favor verifica que el formato sea CSV.")
+        st.error(f"Error: {e}. Prueba aumentando el número de 'Filas a saltar'.")
 
 # --- FOOTER ---
-st.markdown("<br><br>", unsafe_allow_html=True)
-st.markdown("<div class='footer'>© 2026 | Sistema Automatizado de Conciliación Bancaria — Creado por Lic. Olgleidys Hernández ✨</div>", unsafe_allow_html=True)
+st.markdown("<br><br><div class='footer'>© 2026 | Sistema Automatizado de Conciliación Bancaria — Creado por Lic. Olgleidys Hernández ✨</div>", unsafe_allow_html=True)
