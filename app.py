@@ -18,9 +18,10 @@ st.title("📊 Sistema Automatizado de Conciliación Bancaria")
 
 with st.expander("📖 Instrucciones de uso"):
     st.markdown("""
-    1. Seleccione empresa, banco, frecuencia, mes y año.
-    2. Cargue los archivos CSV. 
-    3. Si el archivo tiene filas de encabezado que no son datos, ajusta 'Filas a saltar' para limpiar la carga.
+    1. Seleccione la empresa, banco, frecuencia, mes y año.
+    2. Cargue los archivos de Banco y Profit CSV. 
+    3. La app realizará la conciliación automática en segundos.
+    4. Descargue la conciliación completa para su análisis.
     """)
 
 # --- CONFIGURACIÓN DE PARÁMETROS ---
