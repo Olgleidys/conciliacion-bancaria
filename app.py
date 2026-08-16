@@ -189,8 +189,11 @@ if file_b and file_p:
 
   df_p_proc["Monto_Total"] = df_p_proc["Debe"] + df_p_proc["Haber"]
   df_duplicados = df_p_proc[
-      df_p_proc.duplicated(subset=["Ref", "Monto_Total"], keep=False)
-      & (df_p_proc["Ref"] != "")
+      (df_p_proc["Ref"] != "")
+      & (
+          df_p_proc.duplicated(subset=["Ref"], keep=False)
+          | df_p_proc.duplicated(subset=["Ref", "Monto_Total"], keep=False)
+      )
   ].copy()
 
   # --- PESTAÑAS ---
