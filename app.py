@@ -1,71 +1,64 @@
-import io
-import pandas as pd
-import streamlit as st
 
-# --- CONFIGURACIÓN Y ESTILOS ---
-st.set_page_config(page_title="Conciliación Bancaria", layout="wide")
-custom_css = """
-    <style>
-    .stApp { background-color: #0d1b2a; color: #e0e1dd; }
-    h1, h2, h3 { color: #ffffff !important; }
-    .footer { position: fixed; left: 0; bottom: 0; width: 100%; background-color: #0b132b; color: #bcbed8; text-align: center; padding: 10px; font-size: 14px; border-top: 2px solid #0077b6; }
-    </style>
-"""
-st.markdown(custom_css, unsafe_allow_html=True)
+import streamlit as st
+import pandas as pd
+import io
+
+# Configuración inicial
+st.set_page_config(layout="wide", page_title="Conciliación Lic. Olgleidys")
 
 st.title("📊 Sistema Automatizado de Conciliación Bancaria")
 
-# --- INSTRUCCIONES ---
-with st.expander("📖 Instrucciones de uso"):
-    st.markdown("1. Seleccione la empresa, banco, frecuencia, mes y año. 2. Cargue los archivos CSV. 3. El sistema procesará cruces, inversiones y errores humanos.")
+# 1. Instrucciones de uso (Estilo clásico)
+with st.expander("Instrucciones de uso"):
+    st.write("1. Seleccione la empresa, banco, frecuencia, mes y año.")
+    st.write("2. Cargue el archivo del estado de cuenta bancario y el archivo de Profit Plus.")
+    st.write("3. Presione el botón de procesar para ver los resultados.")
 
-# --- UI CONFIGURACIÓN ---
-c1, c2 = st.columns(2)
-empresa = c1.selectbox("🏢 Empresa:", ["Thermo Group", "Mystic", "Keravital"])
-banco = c2.selectbox("🏦 Banco:", ["Banesco", "Venezuela", "Banplus", "Mercantil", "Banco Fondo Común"])
-p1, p2, p3 = st.columns(3)
-frecuencia = p1.selectbox("⏱️ Frecuencia:", ["Semanal", "Quincenal", "Mensual"])
-mes = p2.selectbox("📆 Mes:", ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"])
-ano = p3.selectbox("📅 Año:", ["2026", "2025"])
+# 2. Configuración de parámetros
+col1, col2 = st.columns(2)
+empresa = col1.selectbox("Empresa:", ["Thermo Group", "Mystic", "Keravital"])
+banco = col2.selectbox("Banco:", ["Banesco", "Venezuela", "Banplus", "Mercantil", "BFC"])
 
-b1, b2 = st.columns(2)
-banco_file = b1.file_uploader(f"📥 Estado de Cuenta {banco} (.csv)", type=["csv"])
-profit_file = b2.file_uploader("📥 Reporte de Profit Plus (.csv)", type=["csv"])
+c3, c4, c5 = st.columns(3)
+frecuencia = c3.selectbox("Frecuencia:", ["Semanal", "Quincenal", "Mensual"])
+mes = c4.selectbox("Mes:", ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"])
+# Selector de años 2026-2030
+ano = c5.selectbox("Año:", list(range(2026, 2031)))
 
-# --- LÓGICA DE PROCESAMIENTO ---
-if banco_file and profit_file:
-    df_b = pd.read_csv(banco_file, sep=None, engine="python", encoding="latin-1")
-    df_p = pd.read_csv(profit_file, sep=None, engine="python", encoding="latin-1")
+# 3. Carga de archivos
+file_banco = st.file_uploader("Cargar Estado de Cuenta Bancario (.csv)", type="csv")
+file_profit = st.file_uploader("Cargar Reporte Profit Plus (.csv)", type="csv")
+
+# 4. Procesamiento
+if file_banco and file_profit:
+    df_b = pd.read_csv(file_banco)
+    df_p = pd.read_csv(file_profit)
     
-    # --- PESTAÑAS (MANTENIENDO ESTRUCTURA) ---
+    # Aquí puedes insertar tu lógica de unión de dataframes
+    # Para asegurar que la información aparezca:
+    st.success("Archivos cargados correctamente.")
+    
+    # Ejemplo de visualización para probar que la info sí llega:
     tab1, tab2, tab3, tab4, tab5 = st.tabs([
         "✅ Conciliados", "🏦 Pendientes Banco", "💻 Pendientes Profit", 
-        "🔄 Inversiones (Debe/Haber)", "⚠️ Duplicados/Errores"
+        "🔄 Inversiones", "⚠️ Errores Humanos"
     ])
+    
+    with tab1:
+        st.dataframe(df_b.head()) # Prueba de carga
 
-    tab1.write("Registros conciliados con éxito.")
-    tab2.write("Registros encontrados solo en el Banco.")
-    tab3.write("Registros encontrados solo en Profit.")
-    tab4.write("Registros con columnas invertidas detectadas.")
-    tab5.write("Duplicados, errores de Ref3 o montos mal tipeados.")
-
-    # --- BOTÓN DE DESCARGA (ABAJO DE TODO CON NOMBRE DINÁMICO) ---
+    # Botón de descarga al final de todo
     st.divider()
-    st.subheader("📥 Exportación de Reporte")
-    nombre_archivo = f"Conciliacion_{empresa}_{banco}_{frecuencia}_{mes}_{ano}.xlsx"
-    buffer = io.BytesIO()
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        df_b.to_excel(writer, index=False)
     
-    # Se utiliza openpyxl para evitar errores de módulos faltantes
-    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-        pd.DataFrame().to_excel(writer, sheet_name="Conciliados")
-    
-    st.download_button("📥 Descargar Reporte Completo en Excel", data=buffer, file_name=nombre_archivo)
+    st.download_button(
+        label="📥 Descargar Reporte Completo",
+        data=output.getvalue(),
+        file_name=f"Conciliacion_{empresa}_{banco}_{mes}_{ano}.xlsx"
+    )
 
-else:
-    st.info("Por favor, cargue los archivos para continuar.")
-
-# --- FOOTER ---
-st.markdown(
-    '<div class="footer"><p>© 2026 | Sistema Automatizado de Conciliación Bancaria — Creado por Lic. Olgleidys Hernández 👩‍💻✨</p></div>',
-    unsafe_allow_html=True,
-)
+# 5. Footer con tu firma
+st.markdown("---")
+st.markdown("<div style='text-align: center; color: grey;'>© 2026 | Sistema Automatizado de Conciliación Bancaria — Creado por Lic. Olgleidys Hernández ✨</div>", unsafe_allow_html=True)
