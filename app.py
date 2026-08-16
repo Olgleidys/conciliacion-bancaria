@@ -82,8 +82,6 @@ else:
 
 # --- FOOTER ---
 st.markdown(
-    '<div class="footer"><p>© 2026 | Sistema Automatizado de Conciliación Bancaria — Creado por Lic. Olgleidys Hernández ✨</p></div>',
+    '<div class="footer"><p>© 2026 | Sistema Automatizado de Conciliación Bancaria — Creado por Lic. Olgleidys Hernández 👩‍💻✨</p></div>',
     unsafe_allow_html=True,
 )
-
-```
