@@ -34,7 +34,6 @@ frecuencia = c3.selectbox("⏱️ Frecuencia:", ["Semanal", "Quincenal", "Mensua
 mes = c4.selectbox("📆 Mes:", ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"])
 ano = c5.selectbox("📅 Año:", list(range(2026, 2030)))
 
-skip_rows = st.number_input("Filas a saltar:", min_value=0, value=0)
 
 # --- LÓGICA DE PROCESAMIENTO ---
 def limpiar_ref_profit(ref):
