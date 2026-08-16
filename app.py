@@ -3,128 +3,144 @@ import pandas as pd
 import streamlit as st
 import itertools
 
-# --- CONFIGURACIÓN Y ESTILOS ---
+# --- CONFIGURACIÓN ---
 st.set_page_config(page_title="Sistema de Conciliación Bancaria", layout="wide")
 custom_css = """
     <style>
-    .stApp { background-color: #0f172a; color: #f8fafc; }
-    h1, h2, h3 { color: #f8fafc !important; }
-    .stDownloadButton button { background-color: #0284c7 !important; color: white !important; font-weight: bold; width: 100%; padding: 10px; border-radius: 8px;}
-    .footer { text-align: center; padding: 20px; font-size: 14px; color: #94a3b8; }
+    .stApp { background-color: #0d1b2a; color: #e0e1dd; }
+    h1, h2, h3 { color: #ffffff !important; }
+    .stDownloadButton button { background-color: #0077b6 !important; color: white !important; font-weight: bold; width: 100%; padding: 10px; border-radius: 8px;}
+    .footer { position: fixed; left: 0; bottom: 0; width: 100%; background-color: #0b132b; color: #bcbed8; text-align: center; padding: 10px; font-size: 14px; border-top: 2px solid #0077b6; z-index: 100; }
     </style>
 """
 st.markdown(custom_css, unsafe_allow_html=True)
+
 st.title("📊 Sistema Automatizado de Conciliación Bancaria")
+
+# --- UI CONFIGURACIÓN ---
+c1, c2 = st.columns(2)
+empresa = c1.selectbox("🏢 Empresa:", ["Thermo Group", "Mystic", "Keravital"])
+banco = c2.selectbox("🏦 Banco:", ["Banesco", "Venezuela", "Banplus", "Banplus Mazal", "Mercantil", "BFC"])
+p1, p2, p3 = st.columns(3)
+frecuencia = p1.selectbox("⏱️ Frecuencia:", ["Semanal", "Quincenal", "Mensual"])
+mes = p2.selectbox("📆 Mes:", ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"])
+ano = p3.selectbox("📅 Año:", ["2026", "2027", "2028"])
 
 # --- INSTRUCCIONES ---
 with st.expander("📝 Instrucciones de uso"):
     st.write("""
-    1. **Carga**: Sube el archivo de Banco y el de Profit.
-    2. **Proceso**: El sistema ejecuta 6 reglas:
-       - **Reglas de Éxito (1-3)**: Concilian automáticamente.
-       - **Reglas de Alerta (4-6)**: Detectan errores de digitación o duplicados sin conciliar.
-    3. **Resultado**: Descarga el Excel con los hallazgos categorizados.
+    1. **Configuración**: Selecciona la empresa, banco, frecuencia, mes y año.
+    2. **Carga**: Sube el Estado de Cuenta (Banco) y el Reporte Profit.
+    3. **Proceso**:
+       - **Reglas de Conciliación (1-3)**: Se cruzan automáticamente los datos.
+       - **Cruces Debe/Haber**: Validación adicional de registros.
+       - **Alertas (4-6)**: Detección de duplicados y errores de digitación (4 dígitos consecutivos).
+    4. **Resultado**: Revisa las 5 pestañas y descarga el Excel final.
     """)
 
-# --- FUNCIONES DE NORMALIZACIÓN ---
+# --- FUNCIONES ---
 def limpiar_monto(serie):
     return pd.to_numeric(serie.astype(str).str.replace(".", "", regex=False).str.replace(",", ".", regex=False).str.strip(), errors="coerce").fillna(0.0).round(2)
 
 def normalizar_archivo(file, tipo):
     df = pd.read_excel(file, dtype=str)
     df.columns = df.columns.astype(str).str.strip().str.lower()
-    col_ref = next((c for c in df.columns if any(k in c for k in ["referencia", "ref", "doc"])), df.columns[0])
+    col_ref = next((c for c in df.columns if any(k in c for k in ["referencia", "ref", "documento", "doc", "nro"])), df.columns[0])
     df = df.rename(columns={col_ref: "Ref"})
     df["Ref"] = df["Ref"].apply(lambda x: str(x).strip().replace(".0", ""))
     df["Ref_3"] = df["Ref"].apply(lambda x: x[-3:] if len(x) >= 3 else x)
     
-    # Calcular Monto Final
     if tipo == "banco":
         df["Monto_Final"] = limpiar_monto(df.get("cred", 0)) - limpiar_monto(df.get("deb", 0))
     else:
         df["Monto_Final"] = limpiar_monto(df.get("debe", 0)) - limpiar_monto(df.get("haber", 0))
     return df
 
-# --- PROCESAMIENTO (LOS 6 PUNTOS) ---
-file_b = st.file_uploader("📥 Banco", type=["xlsx"])
-file_p = st.file_uploader("📥 Profit", type=["xlsx"])
+def check_4_digits(m1, m2):
+    s1 = f"{abs(float(m1)):.2f}".replace('.', '')
+    s2 = f"{abs(float(m2)):.2f}".replace('.', '')
+    if len(s1) < 4 or len(s2) < 4: return False
+    for i in range(len(s1) - 3):
+        if s1[i:i+4] in s2: return True
+    return False
+
+# --- PROCESAMIENTO ---
+f_b, f_p = st.columns(2)
+file_b = f_b.file_uploader("📥 Estado de Cuenta (Banco)", type=["xlsx"])
+file_p = f_p.file_uploader("📥 Reporte Profit", type=["xlsx"])
 
 if file_b and file_p:
-    banco_df = normalizar_archivo(file_b, "banco")
-    profit_df = normalizar_archivo(file_p, "profit")
+    df_b = normalizar_archivo(file_b, "banco")
+    df_p = normalizar_archivo(file_p, "profit")
     
-    # Listas de pendientes
-    pend_b = banco_df.copy()
-    pend_p = profit_df.copy()
+    pend_b, pend_p = df_b.copy(), df_p.copy()
     conciliados = pd.DataFrame()
     alertas = pd.DataFrame()
 
-    # --- REGLA 1: Exacto (Ref + Monto) ---
+    # REGLA 1: Exacto
     m1 = pd.merge(pend_b, pend_p, on=["Ref", "Monto_Final"], suffixes=("_B", "_P"))
-    if not m1.empty:
-        m1["Regla"] = "1. Exacto"
-        conciliados = pd.concat([conciliados, m1])
-        pend_b = pend_b[~pend_b.index.isin(m1.index.get_level_values(0))] # Ajustar según índice
-        pend_p = pend_p[~pend_p.index.isin(m1.index.get_level_values(0))]
+    m1["Regla"] = "1. Exacto"
+    conciliados = pd.concat([conciliados, m1])
+    pend_b = pend_b[~pend_b.index.isin(m1.index.get_level_values(0))]
+    pend_p = pend_p[~pend_p.index.isin(m1.index.get_level_values(0))]
 
-    # --- REGLA 2: Ref 3 dígitos + Monto ---
+    # REGLA 2: Últimos 3 dígitos + Monto
     m2 = pd.merge(pend_b, pend_p, on=["Ref_3", "Monto_Final"], suffixes=("_B", "_P"))
-    if not m2.empty:
-        m2["Regla"] = "2. Ref 3 Digitos + Monto"
-        conciliados = pd.concat([conciliados, m2])
-        pend_b = pend_b[~pend_b.index.isin(m2.index.get_level_values(0))]
-        pend_p = pend_p[~pend_p.index.isin(m2.index.get_level_values(0))]
+    m2["Regla"] = "2. Ref 3 Digitos + Monto"
+    conciliados = pd.concat([conciliados, m2])
+    pend_b = pend_b[~pend_b.index.isin(m2.index.get_level_values(0))]
+    pend_p = pend_p[~pend_p.index.isin(m2.index.get_level_values(0))]
 
-    # --- REGLA 3: Sumatoria (Profit vs Banco) ---
+    # REGLA 3: Sumatoria Profit vs Banco
     sumatoria = pend_p.groupby("Ref_3")["Monto_Final"].sum().reset_index()
     m3 = pd.merge(pend_b, sumatoria, on=["Ref_3", "Monto_Final"], suffixes=("_B", "_P"))
-    if not m3.empty:
-        m3["Regla"] = "3. Sumatoria Profit"
-        conciliados = pd.concat([conciliados, m3])
-        # Nota: Aquí no removemos todos porque pueden ser múltiples registros de Profit
-        pend_b = pend_b[~pend_b.index.isin(m3.index.get_level_values(0))]
+    m3["Regla"] = "3. Sumatoria Profit"
+    conciliados = pd.concat([conciliados, m3])
+    pend_b = pend_b[~pend_b.index.isin(m3.index.get_level_values(0))]
 
-    # --- REGLA 4: Duplicado Exacto ---
-    dup_b = banco_df[banco_df.duplicated(subset=["Ref", "Monto_Final"], keep=False)]
-    if not dup_b.empty:
-        dup_b["Regla"] = "4. Duplicado Exacto"
-        alertas = pd.concat([alertas, dup_b])
+    # CRUCES DEBE/HABER (Independiente)
+    cruce_dh = pd.merge(df_b, df_p, on="Ref", suffixes=("_B", "_P"))
+    cruce_dh = cruce_dh[(cruce_dh["Monto_Final_B"] == cruce_dh["Monto_Final_P"])]
+    cruce_dh["Regla"] = "Cruce Debe/Haber"
 
-    # --- REGLA 5: Duplicado 3 Digitos ---
-    dup_3 = banco_df[banco_df.duplicated(subset=["Ref_3", "Monto_Final"], keep=False)]
-    if not dup_3.empty:
-        dup_3["Regla"] = "5. Duplicado 3 Digitos"
-        alertas = pd.concat([alertas, dup_3])
+    # REGLAS 4-6 (ALERTAS)
+    # 4. Duplicado Exacto
+    dup_ex = df_b[df_b.duplicated(subset=["Ref", "Monto_Final"], keep=False)]
+    dup_ex["Alerta"] = "4. Duplicado Exacto"
+    alertas = pd.concat([alertas, dup_ex])
 
-    # --- REGLA 6: Error Digitación (4 dígitos consecutivos) ---
-    def check_4_digits(m1, m2):
-        s1 = f"{abs(float(m1)):.2f}".replace('.', '')
-        s2 = f"{abs(float(m2)):.2f}".replace('.', '')
-        for i in range(len(s1) - 3):
-            if s1[i:i+4] in s2: return True
-        return False
+    # 5. Duplicado 3 dígitos
+    dup_3 = df_b[df_b.duplicated(subset=["Ref_3", "Monto_Final"], keep=False)]
+    dup_3["Alerta"] = "5. Duplicado 3 Digitos"
+    alertas = pd.concat([alertas, dup_3])
 
-    for ref, group in banco_df.groupby("Ref"):
+    # 6. Error 4 dígitos
+    for ref, group in df_b[df_b["Ref"] != ""].groupby("Ref"):
         if len(group) > 1:
-            for i, row in group.iterrows():
+            for i, row1 in group.iterrows():
                 for j, row2 in group.iterrows():
-                    if i < j and check_4_digits(row["Monto_Final"], row2["Monto_Final"]):
-                        err = pd.DataFrame([row, row2])
-                        err["Regla"] = "6. Error 4 Digitos"
+                    if i < j and check_4_digits(row1["Monto_Final"], row2["Monto_Final"]):
+                        err = pd.DataFrame([row1, row2])
+                        err["Alerta"] = "6. Error 4 Digitos Consecutivos"
                         alertas = pd.concat([alertas, err])
 
-    # --- RESULTADOS ---
-    tabs = st.tabs(["✅ Conciliados", "🏦 Pendientes Banco", "💻 Pendientes Profit", "⚠️ Alertas (4-6)"])
-    tabs[0].dataframe(conciliados)
-    tabs[1].dataframe(pend_b)
-    tabs[2].dataframe(pend_p)
-    tabs[3].dataframe(alertas.drop_duplicates())
+    # --- PESTAÑAS ---
+    tabs = st.tabs(["✅ Todo lo Conciliado", "🏦 Pendiente Banco", "💻 Pendiente Profit", "🔄 Cruces Debe/Haber", "⚠️ Duplicados y Errores"])
+    tabs[0].dataframe(conciliados, use_container_width=True)
+    tabs[1].dataframe(pend_b, use_container_width=True)
+    tabs[2].dataframe(pend_p, use_container_width=True)
+    tabs[3].dataframe(cruce_dh, use_container_width=True)
+    tabs[4].dataframe(alertas.drop_duplicates(), use_container_width=True)
 
     # --- DESCARGA ---
     output = io.BytesIO()
     with pd.ExcelWriter(output) as writer:
-        conciliados.to_excel(writer, sheet_name="Conciliados", index=False)
+        conciliados.to_excel(writer, sheet_name="Conciliado", index=False)
+        pend_b.to_excel(writer, sheet_name="Pendiente Banco", index=False)
+        pend_p.to_excel(writer, sheet_name="Pendiente Profit", index=False)
+        cruce_dh.to_excel(writer, sheet_name="Cruces DH", index=False)
         alertas.to_excel(writer, sheet_name="Alertas", index=False)
-    st.download_button("📥 Descargar Reporte Final", output.getvalue(), "Conciliacion_Final.xlsx")
+    st.download_button("📥 DESCARGAR REPORTE", output.getvalue(), f"Conciliacion_{empresa}_{mes}_{ano}.xlsx")
 
-st.markdown('<div class="footer">Sistema Automatizado | Olgleidys Hernández</div>', unsafe_allow_html=True)
+# --- FOOTER ---
+st.markdown('<br><br><div class="footer"><p>© 2026 | Sistema Automatizado de Conciliación Bancaria — Creado por Lic. Olgleidys Hernández ✨</p></div>', unsafe_allow_html=True)
