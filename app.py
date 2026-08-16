@@ -44,7 +44,19 @@ def normalizar_archivo(file, tipo):
         col_ref = df.columns[1] if len(df.columns) > 1 else df.columns[0]
     
     df = df.rename(columns={col_ref: "Ref"})
-    df["Ref"] = df["Ref"].fillna("").astype(str).str.replace(r"\.0$", "", regex=True).str.strip()
+    
+    def limpiar_referencia(val):
+        val = str(val).strip()
+        if not val or val.lower() == "nan":
+            return ""
+        if 'e' in val.lower() or '.' in val:
+            try:
+                val = str(int(float(val)))
+            except ValueError:
+                pass
+        return val.replace(".0", "").strip()
+
+    df["Ref"] = df["Ref"].apply(limpiar_referencia)
     
     # Blanquear si tiene 2 dígitos o menos (error de dedo)
     df["Ref"] = df["Ref"].apply(lambda x: "" if len(x) <= 2 else x)
