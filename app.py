@@ -16,6 +16,16 @@ st.markdown(custom_css, unsafe_allow_html=True)
 
 st.title("📊 Sistema Automatizado de Conciliación Bancaria")
 
+# --- INSTRUCCIONES DE USO ---
+with st.expander("📖 Instrucciones de uso"):
+  st.markdown("""
+    1. **Configuración:** Seleccione la empresa, el banco, la frecuencia, el mes y el año.
+    2. **Carga de Archivos:** Suba el estado de cuenta bancario y el reporte de Profit Plus en formato `.xlsx`.
+    3. **Procesamiento:** El sistema analizará los datos conservando la exactitud de los montos y las referencias largas.
+    4. **Resultados:** Revise las pestañas de Conciliados (Crédito/Debe y Débito/Haber), Pendientes y Duplicados.
+    5. **Exportación:** Descargue el resultado final en Excel.
+    """)
+
 # --- UI CONFIGURACIÓN ---
 c1, c2 = st.columns(2)
 empresa = c1.selectbox("🏢 Empresa:", ["Thermo Group", "Mystic", "Keravital"])
@@ -54,11 +64,8 @@ if file_b and file_p:
     df_p_proc["Monto_Total"] = (df_p_proc["Debe"] + df_p_proc["Haber"]).round(2)
 
     # --- CRUCES ---
-    # Cruce 1: Crédito Banco vs. Debe Profit
     cruce_1 = pd.merge(df_b_proc[df_b_proc["Credito"] > 0], df_p_proc[df_p_proc["Debe"] > 0], 
                        left_on=["Ref", "Credito"], right_on=["Ref", "Debe"])
-    
-    # Cruce 2: Débito Banco vs. Haber Profit
     cruce_2 = pd.merge(df_b_proc[df_b_proc["Debito"] > 0], df_p_proc[df_p_proc["Haber"] > 0], 
                        left_on=["Ref", "Debito"], right_on=["Ref", "Haber"])
     
