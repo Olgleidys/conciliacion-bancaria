@@ -22,7 +22,7 @@ with st.expander("📖 Instrucciones de uso"):
     st.markdown("""
     1. Seleccione empresa, banco, frecuencia, mes y año.
     2. Cargue los archivos CSV del Banco y de Profit Plus. 
-    3. La app ejecutará los cruces inteligentes (Completos, 3 dígitos, Sumatorias) y la auditoría de duplicados y alertas rojas.
+    3. La app ejecutará los cruces automáticos (Completos, 3 dígitos, Sumatorias) y la auditoría de duplicados y alertas rojas.
     4. Descargue el reporte completo en Excel con todas las pestañas organizadas. 
     """)
 
@@ -124,15 +124,12 @@ if file_banco and file_profit:
             df_pend_profit = df_p[~df_p['Ref_Procesada'].isin(df_conciliados.get('Ref_Procesada_Profit', refs_conciliadas_b))]
 
             # --- AUDITORÍA DE DUPLICADOS Y ALERTAS ROJAS ---
-            # 1. Duplicados exactos (Ref y Monto)
             dups_exactos = df_p[df_p.duplicated(subset=['Ref_Procesada', 'Monto_Num'], keep=False)].copy()
             dups_exactos['Tipo_Error'] = 'Duplicado Exacto (Ref y Monto)'
 
-            # 2. Duplicados con últimos 3 dígitos y monto iguales
             dups_corto = df_p[df_p.duplicated(subset=['Ref_Corto', 'Monto_Num'], keep=False)].copy()
             dups_corto['Tipo_Error'] = 'Duplicado por Ref Corta (3 dig) y Monto'
 
-            # 3. Alerta Roja: Misma referencia, montos diferentes pero con 3 números consecutivos iguales
             alertas_rojas = []
             for idx, row in df_p.iterrows():
                 coincidencias_ref = df_p[(df_p['Ref_Procesada'] == row['Ref_Procesada']) & (df_p['Monto_Num'] != row['Monto_Num'])]
@@ -146,8 +143,6 @@ if file_banco and file_profit:
                 df_rojos['Tipo_Error'] = '🚨 ALERTA ROJA: Ref Igual con Montos Diferentes (3 dig consecutivos)'
 
             df_errores_totales = pd.concat([dups_exactos, dups_corto, df_rojos], ignore_index=True).drop_duplicates()
-
-            # Inversiones (Placeholder analítico)
             df_inversiones = pd.DataFrame(columns=df_p.columns)
 
             # --- PESTAÑAS VISUALES ---
@@ -171,10 +166,8 @@ if file_banco and file_profit:
             with tab5:
                 st.subheader("Auditoría de Duplicados y Alertas Rojas")
                 if not df_errores_totales.empty:
-                    # Aplicar estilo rojo a las filas de alerta roja
                     def estilizar_rojo(val):
                         return 'background-color: #8b0000; color: white;' if 'ALERTA ROJA' in str(val) else ''
-                    
                     st.dataframe(df_errores_totales.style.applymap(estilizar_rojo, subset=['Tipo_Error'] if 'Tipo_Error' in df_errores_totales.columns else None), use_container_width=True)
                 else:
                     st.success("No se encontraron errores ni duplicados bajo los criterios evaluados.")
