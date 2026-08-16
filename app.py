@@ -3,7 +3,7 @@ import pandas as pd
 import streamlit as st
 import itertools
 
-# --- CONFIGURACIÓN ---
+# --- CONFIGURACIÓN Y ESTILOS ---
 st.set_page_config(page_title="Sistema de Conciliación Bancaria", layout="wide")
 custom_css = """
     <style>
@@ -17,6 +17,17 @@ st.markdown(custom_css, unsafe_allow_html=True)
 
 st.title("📊 Sistema Automatizado de Conciliación Bancaria")
 
+# --- INSTRUCCIONES DE USO ---
+with st.expander("📝 Instrucciones de uso"):
+    st.markdown("""
+    Siga estos sencillos pasos para realizar su conciliación:
+    
+    1. **Configuración**: Seleccione la empresa, el banco y el periodo correspondiente (frecuencia, mes y año).
+    2. **Carga de Archivos**: Suba el Estado de Cuenta del Banco y el Reporte de Profit Plus en formato Excel.
+    3. **Revisión**: El sistema procesará y organizará la información automáticamente. Verifique los resultados en las pestañas dispuestas para ello.
+    4. **Descarga**: Haga clic en el botón inferior para descargar el archivo Excel consolidado con todo el reporte listo.
+    """)
+
 # --- UI CONFIGURACIÓN ---
 c1, c2 = st.columns(2)
 empresa = c1.selectbox("🏢 Empresa:", ["Thermo Group", "Mystic", "Keravital"])
@@ -26,18 +37,6 @@ frecuencia = p1.selectbox("⏱️ Frecuencia:", ["Semanal", "Quincenal", "Mensua
 mes = p2.selectbox("📆 Mes:", ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"])
 ano = p3.selectbox("📅 Año:", ["2026", "2027", "2028"])
 
-# --- INSTRUCCIONES ---
-with st.expander("📝 Instrucciones de uso"):
-    st.write("""
-    1. **Configuración**: Selecciona la empresa, banco, frecuencia, mes y año.
-    2. **Carga**: Sube el Estado de Cuenta (Banco) y el Reporte Profit.
-    3. **Proceso**:
-       - **Reglas de Conciliación (1-3)**: Se cruzan automáticamente los datos.
-       - **Cruces Debe/Haber**: Validación adicional de registros.
-       - **Alertas (4-6)**: Detección de duplicados y errores de digitación (4 dígitos consecutivos).
-    4. **Resultado**: Revisa las 5 pestañas y descarga el Excel final.
-    """)
-
 # --- FUNCIONES ---
 def limpiar_monto(serie):
     return pd.to_numeric(serie.astype(str).str.replace(".", "", regex=False).str.replace(",", ".", regex=False).str.strip(), errors="coerce").fillna(0.0).round(2)
@@ -45,7 +44,7 @@ def limpiar_monto(serie):
 def normalizar_archivo(file, tipo):
     df = pd.read_excel(file, dtype=str)
     df.columns = df.columns.astype(str).str.strip().str.lower()
-    col_ref = next((c for c in df.columns if any(k in c for k in ["referencia", "ref", "documento", "doc", "nro"])), df.columns[0])
+    col_ref = next((c for c in df.columns if any(k in c for k in ["referencia", "ref", "doc"])), df.columns[0])
     df = df.rename(columns={col_ref: "Ref"})
     df["Ref"] = df["Ref"].apply(lambda x: str(x).strip().replace(".0", ""))
     df["Ref_3"] = df["Ref"].apply(lambda x: x[-3:] if len(x) >= 3 else x)
@@ -77,44 +76,39 @@ if file_b and file_p:
     conciliados = pd.DataFrame()
     alertas = pd.DataFrame()
 
-    # REGLA 1: Exacto
+    # REGLA 1, 2, 3 (Conciliación)
     m1 = pd.merge(pend_b, pend_p, on=["Ref", "Monto_Final"], suffixes=("_B", "_P"))
     m1["Regla"] = "1. Exacto"
     conciliados = pd.concat([conciliados, m1])
     pend_b = pend_b[~pend_b.index.isin(m1.index.get_level_values(0))]
     pend_p = pend_p[~pend_p.index.isin(m1.index.get_level_values(0))]
 
-    # REGLA 2: Últimos 3 dígitos + Monto
     m2 = pd.merge(pend_b, pend_p, on=["Ref_3", "Monto_Final"], suffixes=("_B", "_P"))
     m2["Regla"] = "2. Ref 3 Digitos + Monto"
     conciliados = pd.concat([conciliados, m2])
     pend_b = pend_b[~pend_b.index.isin(m2.index.get_level_values(0))]
     pend_p = pend_p[~pend_p.index.isin(m2.index.get_level_values(0))]
 
-    # REGLA 3: Sumatoria Profit vs Banco
     sumatoria = pend_p.groupby("Ref_3")["Monto_Final"].sum().reset_index()
     m3 = pd.merge(pend_b, sumatoria, on=["Ref_3", "Monto_Final"], suffixes=("_B", "_P"))
     m3["Regla"] = "3. Sumatoria Profit"
     conciliados = pd.concat([conciliados, m3])
     pend_b = pend_b[~pend_b.index.isin(m3.index.get_level_values(0))]
 
-    # CRUCES DEBE/HABER (Independiente)
+    # CRUCE DEBE/HABER
     cruce_dh = pd.merge(df_b, df_p, on="Ref", suffixes=("_B", "_P"))
     cruce_dh = cruce_dh[(cruce_dh["Monto_Final_B"] == cruce_dh["Monto_Final_P"])]
     cruce_dh["Regla"] = "Cruce Debe/Haber"
 
-    # REGLAS 4-6 (ALERTAS)
-    # 4. Duplicado Exacto
+    # ALERTAS (4, 5, 6)
     dup_ex = df_b[df_b.duplicated(subset=["Ref", "Monto_Final"], keep=False)]
     dup_ex["Alerta"] = "4. Duplicado Exacto"
     alertas = pd.concat([alertas, dup_ex])
 
-    # 5. Duplicado 3 dígitos
     dup_3 = df_b[df_b.duplicated(subset=["Ref_3", "Monto_Final"], keep=False)]
     dup_3["Alerta"] = "5. Duplicado 3 Digitos"
     alertas = pd.concat([alertas, dup_3])
 
-    # 6. Error 4 dígitos
     for ref, group in df_b[df_b["Ref"] != ""].groupby("Ref"):
         if len(group) > 1:
             for i, row1 in group.iterrows():
@@ -124,8 +118,8 @@ if file_b and file_p:
                         err["Alerta"] = "6. Error 4 Digitos Consecutivos"
                         alertas = pd.concat([alertas, err])
 
-    # --- PESTAÑAS ---
-    tabs = st.tabs(["✅ Todo lo Conciliado", "🏦 Pendiente Banco", "💻 Pendiente Profit", "🔄 Cruces Debe/Haber", "⚠️ Duplicados y Errores"])
+    # --- PESTAÑAS (5 en total) ---
+    tabs = st.tabs(["✅ Conciliado", "🏦 Pendiente Banco", "💻 Pendiente Profit", "🔄 Cruces Debe/Haber", "⚠️ Duplicados y Errores"])
     tabs[0].dataframe(conciliados, use_container_width=True)
     tabs[1].dataframe(pend_b, use_container_width=True)
     tabs[2].dataframe(pend_p, use_container_width=True)
@@ -134,7 +128,7 @@ if file_b and file_p:
 
     # --- DESCARGA ---
     output = io.BytesIO()
-    with pd.ExcelWriter(output) as writer:
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
         conciliados.to_excel(writer, sheet_name="Conciliado", index=False)
         pend_b.to_excel(writer, sheet_name="Pendiente Banco", index=False)
         pend_p.to_excel(writer, sheet_name="Pendiente Profit", index=False)
