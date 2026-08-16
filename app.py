@@ -112,7 +112,15 @@ if banco_file and profit_file:
       if "Credito" in df_b_proc.columns
       else 0.0
   )
-  if "Ref" in df_b_proc.columns:
+  if "Referencia" in df_b_proc.columns:
+    df_b_proc["Ref"] = (
+        df_b_proc["Referencia"]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+        .str.replace(r"\.0$", "", regex=True)
+    )
+  elif "Ref" in df_b_proc.columns:
     df_b_proc["Ref"] = (
         df_b_proc["Ref"]
         .fillna("")
@@ -120,6 +128,9 @@ if banco_file and profit_file:
         .str.strip()
         .str.replace(r"\.0$", "", regex=True)
     )
+  else:
+    df_b_proc["Ref"] = ""
+
   df_b_proc["Ref3"] = df_b_proc["Ref"].str[-3:]
   df_b_proc["orig_idx"] = df_b_proc.index
 
@@ -147,7 +158,15 @@ if banco_file and profit_file:
       if "Haber" in df_p_proc.columns
       else 0.0
   )
-  if "Ref" in df_p_proc.columns:
+  if "Referencia" in df_p_proc.columns:
+    df_p_proc["Ref"] = (
+        df_p_proc["Referencia"]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+        .str.replace(r"\.0$", "", regex=True)
+    )
+  elif "Ref" in df_p_proc.columns:
     df_p_proc["Ref"] = (
         df_p_proc["Ref"]
         .fillna("")
@@ -155,43 +174,49 @@ if banco_file and profit_file:
         .str.strip()
         .str.replace(r"\.0$", "", regex=True)
     )
+  else:
+    df_p_proc["Ref"] = ""
+
   df_p_proc["Ref3"] = df_p_proc["Ref"].str[-3:]
   df_p_proc["orig_idx"] = df_p_proc.index
 
   # --- IDENTIFICAR DUPLICADOS EN PROFIT (Puntos 4 y 5) ---
   df_p_proc["Monto_Total_Duplicidad"] = df_p_proc["Debe"] + df_p_proc["Haber"]
-  
+
   # 4. Duplicados exactos (Mismo número de referencia y monto)
   df_p_proc["Es_Duplicado_Exacto"] = df_p_proc.duplicated(
       subset=["Ref", "Monto_Total_Duplicidad"], keep=False
   )
-  
+
   # 5. Duplicados que tengan los mismos últimos 3 dígitos de referencia y monto iguales
   df_p_proc["Es_Duplicado_Ref3"] = df_p_proc.duplicated(
       subset=["Ref3", "Monto_Total_Duplicidad"], keep=False
   )
-  
-  # Fusionar banderas para la vista general de duplicados que ya tenías
-  df_p_proc["Es_Duplicado"] = df_p_proc["Es_Duplicado_Exacto"] | df_p_proc["Es_Duplicado_Ref3"]
+
+  df_p_proc["Es_Duplicado"] = (
+      df_p_proc["Es_Duplicado_Exacto"] | df_p_proc["Es_Duplicado_Ref3"]
+  )
   df_p["Es_Duplicado"] = df_p_proc["Es_Duplicado"]
   df_p_duplicados = df_p[df_p["Es_Duplicado"]].copy()
 
-  # 6. Duplicados con misma referencia y montos diferentes (coinciden 3 números consecutivos del monto -> marcar rojo)
+
+  # 6. Duplicados con misma referencia y montos diferentes (coinciden 3 números consecutivos -> marcar rojo)
   def detectar_montos_similares(group):
     if len(group) > 1:
       montos = group["Monto_Total_Duplicidad"].tolist()
-      # Validar similitud de al menos 3 dígitos consecutivos en montos diferentes
       for i in range(len(montos)):
         for j in range(i + 1, len(montos)):
           m1_str = f"{montos[i]:.2f}".replace(".", "")
           m2_str = f"{montos[j]:.2f}".replace(".", "")
-          # Buscar subcadenas consecutivas de longitud 3
-          coincide = any(m1_str[k:k+3] in m2_str for k in range(len(m1_str)-2))
+          coincide = any(m1_str[k : k + 3] in m2_str for k in range(len(m1_str) - 2))
           if coincide and montos[i] != montos[j]:
             group.loc[:, "Alerta_Rojo"] = True
     return group
 
-  df_p_proc = df_p_proc.groupby("Ref", group_keys=False).apply(detectar_montos_similares)
+
+  df_p_proc = df_p_proc.groupby("Ref", group_keys=False).apply(
+      detectar_montos_similares
+  )
   if "Alerta_Rojo" not in df_p_proc.columns:
     df_p_proc["Alerta_Rojo"] = False
 
@@ -213,7 +238,7 @@ if banco_file and profit_file:
   rest_p_ing = p_debe[
       (~p_debe["orig_idx"].isin(idx_p_ing1)) & (p_debe["Ref3"] != "")
   ]
-  
+
   # 2. Cruce por últimos 3 dígitos y monto iguales
   cruce_ing_2 = pd.merge(
       rest_b_ing, rest_p_ing, on=["Ref3", "Monto"], suffixes=("_B", "_P")
@@ -222,10 +247,9 @@ if banco_file and profit_file:
   idx_p_ing2 = cruce_ing_2["orig_idx_P"]
 
   # 3. Cruce por suma parcial (Profit múltiple suma exacto al Banco con misma Ref)
-  # Identificamos pendientes de ingresos en banco y profit
   pend_b_ing_sum = rest_b_ing[~rest_b_ing["orig_idx"].isin(idx_b_ing2)]
   pend_p_ing_sum = rest_p_ing[~rest_p_ing["orig_idx"].isin(idx_p_ing2)]
-  
+
   idx_b_ing3 = []
   idx_p_ing3 = []
   for _, row_b in pend_b_ing_sum.iterrows():
@@ -263,7 +287,7 @@ if banco_file and profit_file:
   # Cruce por suma parcial para egresos
   pend_b_eg_sum = rest_b_eg[~rest_b_eg["orig_idx"].isin(idx_b_eg2)]
   pend_p_eg_sum = rest_p_eg[~rest_p_eg["orig_idx"].isin(idx_p_eg2)]
-  
+
   idx_b_eg3 = []
   idx_p_eg3 = []
   for _, row_b in pend_b_eg_sum.iterrows():
@@ -275,15 +299,31 @@ if banco_file and profit_file:
       idx_p_eg3.extend(match_p["orig_idx"].tolist())
 
   # Consolidar todos los índices conciliados
-  todos_idx_b = pd.concat([
-      idx_b_ing1, idx_b_ing2, pd.Series(idx_b_ing3), 
-      idx_b_eg1, idx_b_eg2, pd.Series(idx_b_eg3)
-  ]).dropna().unique()
-  
-  todos_idx_p = pd.concat([
-      idx_p_ing1, idx_p_ing2, pd.Series(idx_p_ing3), 
-      idx_p_eg1, idx_p_eg2, pd.Series(idx_p_eg3)
-  ]).dropna().unique()
+  todos_idx_b = (
+      pd.concat([
+          idx_b_ing1,
+          idx_b_ing2,
+          pd.Series(idx_b_ing3),
+          idx_b_eg1,
+          idx_b_eg2,
+          pd.Series(idx_b_eg3),
+      ])
+      .dropna()
+      .unique()
+  )
+
+  todos_idx_p = (
+      pd.concat([
+          idx_p_ing1,
+          idx_p_ing2,
+          pd.Series(idx_p_ing3),
+          idx_p_eg1,
+          idx_p_eg2,
+          pd.Series(idx_p_eg3),
+      ])
+      .dropna()
+      .unique()
+  )
 
   # --- DETECCIÓN DE INVERSIONES DE COLUMNA ---
   p_haber_all = df_p_proc[df_p_proc["Haber"] > 0].copy()
@@ -306,12 +346,24 @@ if banco_file and profit_file:
 
   df_inversiones = pd.concat([inv_ing, inv_eg], ignore_index=True)
 
-  # Separar Conciliados y Pendientes
-  df_b_conciliados = df_b.loc[df_b.index.isin(todos_idx_b)].reset_index(drop=True)
-  df_p_conciliados = df_p.loc[df_p.index.isin(todos_idx_p)].reset_index(drop=True)
+  # USANDO df_b_proc y df_p_proc para reflejar los valores limpios de Débito y Crédito correctamente
+  df_b_conciliados = (
+      df_b_proc.loc[df_b_proc["orig_idx"].isin(todos_idx_b)]
+      .reset_index(drop=True)
+  )
+  df_p_conciliados = (
+      df_p_proc.loc[df_p_proc["orig_idx"].isin(todos_idx_p)]
+      .reset_index(drop=True)
+  )
 
-  df_b_pendientes = df_b.loc[~df_b.index.isin(todos_idx_b)].reset_index(drop=True)
-  df_p_pendientes = df_p.loc[~df_p.index.isin(todos_idx_p)].reset_index(drop=True)
+  df_b_pendientes = (
+      df_b_proc.loc[~df_b_proc["orig_idx"].isin(todos_idx_b)]
+      .reset_index(drop=True)
+  )
+  df_p_pendientes = (
+      df_p_proc.loc[~df_p_proc["orig_idx"].isin(todos_idx_p)]
+      .reset_index(drop=True)
+  )
 
   cruce_final_display = pd.concat(
       [
@@ -321,8 +373,8 @@ if banco_file and profit_file:
       axis=1,
   )
 
-  # --- PESTAÑAS DE VISUALIZACIÓN ---
-  tab1, tab2, tab3, tab4 = st.tabs([
+  # --- PESTAÑAS DE VISUALIZACIÓN (5 Pestañas integradas) ---
+  tab1, tab2, tab3, tab4, tab5 = st.tabs([
       "✅ Conciliados",
       "🔄 Inversiones (Debe/Haber)",
       "🏦 Pendientes Banco",
@@ -341,9 +393,7 @@ if banco_file and profit_file:
       )
       st.dataframe(df_inversiones, use_container_width=True)
     else:
-      st.success(
-          "No se detectaron inversiones de columnas (Debe/Haber) erróneas."
-      )
+      st.success("No se detectaron inversiones de columnas (Debe/Haber) erróneas.")
 
   with tab3:
     st.dataframe(df_b_pendientes, use_container_width=True)
@@ -351,26 +401,25 @@ if banco_file and profit_file:
   with tab4:
     st.dataframe(df_p_pendientes, use_container_width=True)
 
-  # --- SECCIÓN DE DUPLICADOS EN PROFIT (Con marcado en rojo visual para punto 6) ---
-  if not df_p_duplicados.empty:
-    st.subheader(
-        "⚠️ Registros Duplicados / Alertas Detectados en Profit"
-    )
-    cols_dup_show = [
-        c for c in df_p_duplicados.columns if c != "Monto_Total_Duplicidad"
-    ]
-    
-    # Aplicar color rojo en la interfaz de Streamlit si cumple la regla 6
-    def resaltar_rojo(row):
-      idx = row.name
-      if idx in df_p_proc.index and df_p_proc.loc[idx, "Alerta_Rojo"]:
-        return ['background-color: #8b0000; color: white'] * len(row)
-      return [''] * len(row)
+  with tab5:
+    if not df_p_duplicados.empty:
+      st.subheader("⚠️ Registros Duplicados / Alertas Detectados en Profit")
+      cols_dup_show = [
+          c for c in df_p_duplicados.columns if c != "Monto_Total_Duplicidad"
+      ]
 
-    st.dataframe(
-        df_p_duplicados[cols_dup_show].style.apply(resaltar_rojo, axis=1), 
-        use_container_width=True
-    )
+      def resaltar_rojo(row):
+        idx = row.name
+        if idx in df_p_proc.index and df_p_proc.loc[idx, "Alerta_Rojo"]:
+          return ["background-color: #8b0000; color: white"] * len(row)
+        return [""] * len(row)
+
+      st.dataframe(
+          df_p_duplicados[cols_dup_show].style.apply(resaltar_rojo, axis=1),
+          use_container_width=True,
+      )
+    else:
+      st.success("No se detectaron registros duplicados ni alertas en Profit.")
 
   # --- NOMBRE DINÁMICO PARA EL ARCHIVO EXCEL ---
   nombre_archivo = f"Conciliacion {empresa} {banco} {frecuencia} {mes} {ano}.xlsx"
@@ -380,7 +429,9 @@ if banco_file and profit_file:
   with pd.ExcelWriter(output, engine="openpyxl") as writer:
     cruce_final_display.to_excel(writer, index=False, sheet_name="Conciliados")
     if not df_inversiones.empty:
-      df_inversiones.to_excel(writer, index=False, sheet_name="Inversiones_DebeHaber")
+      df_inversiones.to_excel(
+          writer, index=False, sheet_name="Inversiones_DebeHaber"
+      )
     df_b_pendientes.to_excel(
         writer, index=False, sheet_name="Pendientes_Banco"
     )
