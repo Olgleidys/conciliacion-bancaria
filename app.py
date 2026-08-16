@@ -101,16 +101,13 @@ if file_banco and file_profit:
             df_p['Monto_Num'] = df_p[col_monto_p].apply(limpiar_monto)
 
             # --- CRUCES DE CONCILIACIÓN ---
-            # A: Ref completa + Monto exacto
             cruce_A = pd.merge(df_b, df_p, on=['Ref_Procesada', 'Monto_Num'], how='inner', suffixes=('_Banco', '_Profit'))
             cruce_A['Tipo_Cruce'] = 'A: Ref Completa y Monto'
 
-            # B: Ref corta (últimos 3 dígitos) + Monto exacto
             cruce_B = pd.merge(df_b, df_p, on=['Ref_Corto', 'Monto_Num'], how='inner', suffixes=('_Banco', '_Profit'))
             cruce_B = cruce_B[~cruce_B.index.isin(cruce_A.index)]
             cruce_B['Tipo_Cruce'] = 'B: Ref Corta (3 dig) y Monto'
 
-            # C: Sumatoria de desgloses en Profit == Monto del Banco
             grupo_p = df_p.groupby('Ref_Corto')['Monto_Num'].sum().reset_index()
             cruce_C = pd.merge(df_b, grupo_p, on='Ref_Corto', suffixes=('', '_Sum'))
             cruce_C = cruce_C[cruce_C['Monto_Num'] == cruce_C['Monto_Num_Sum']]
@@ -118,7 +115,6 @@ if file_banco and file_profit:
 
             df_conciliados = pd.concat([cruce_A, cruce_B, cruce_C], ignore_index=True).drop_duplicates()
             
-            # PENDIENTES
             refs_conciliadas_b = df_conciliados['Ref_Procesada_Banco'].unique() if 'Ref_Procesada_Banco' in df_conciliados.columns else df_conciliados.get('Ref_Procesada', []).unique()
             df_pend_banco = df_b[~df_b['Ref_Procesada'].isin(refs_conciliadas_b)]
             df_pend_profit = df_p[~df_p['Ref_Procesada'].isin(df_conciliados.get('Ref_Procesada_Profit', refs_conciliadas_b))]
@@ -168,7 +164,7 @@ if file_banco and file_profit:
                 if not df_errores_totales.empty:
                     def estilizar_rojo(val):
                         return 'background-color: #8b0000; color: white;' if 'ALERTA ROJA' in str(val) else ''
-                    st.dataframe(df_errores_totales.style.applymap(estilizar_rojo, subset=['Tipo_Error'] if 'Tipo_Error' in df_errores_totales.columns else None), use_container_width=True)
+                    st.dataframe(df_errores_totales.style.map(estilizar_rojo, subset=['Tipo_Error'] if 'Tipo_Error' in df_errores_totales.columns else None), use_container_width=True)
                 else:
                     st.success("No se encontraron errores ni duplicados bajo los criterios evaluados.")
 
