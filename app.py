@@ -19,41 +19,20 @@ st.title("📊 Sistema Automatizado de Conciliación Bancaria")
 # --- INSTRUCCIONES DE USO ---
 with st.expander("📖 Instrucciones de uso"):
   st.markdown("""
-    1. **Configuración:** Seleccione la empresa, el banco, la frecuencia, el mes y el año correspondientes.
-    2. **Carga de Archivos:** Suba el estado de cuenta bancario y el reporte de Profit Plus en formato `.csv`.
-    3. **Procesamiento:** El sistema analizará automáticamente ambos archivos aplicando cruces exactos, por últimos 3 dígitos, sumatorias múltiples y detección de duplicados/errores.
-    4. **Resultados:** Revise las pestañas de Conciliados, Cruces Debe/Haber, Pendientes y Duplicados/Errores.
-    5. **Exportación:** Haga clic en el botón de descarga al final para obtener el reporte completo en formato Excel.
+    1. **Configuración:** Seleccione la empresa, el banco, la frecuencia, el mes y el año.
+    2. **Carga de Archivos:** Suba el estado de cuenta bancario y el reporte de Profit Plus en formato `.xlsx`.
+    3. **Procesamiento:** El sistema analizará los datos conservando la exactitud de los montos y las referencias largas.
+    4. **Resultados:** Revise las pestañas de Conciliados, Cruces, Pendientes y Duplicados.
+    5. **Exportación:** Descargue el resultado final en Excel.
     """)
 
 # --- UI CONFIGURACIÓN ---
 c1, c2 = st.columns(2)
 empresa = c1.selectbox("🏢 Empresa:", ["Thermo Group", "Mystic", "Keravital"])
-banco = c2.selectbox(
-    "🏦 Banco:",
-    ["Banesco", "Venezuela", "Banplus", "Banplus Mazal", "Mercantil", "BFC"],
-)
+banco = c2.selectbox("🏦 Banco:", ["Banesco", "Venezuela", "Banplus", "Banplus Mazal", "Mercantil", "BFC"])
 p1, p2, p3 = st.columns(3)
-frecuencia = p1.selectbox("⏱️ Frecuencia:", ["Semanal", "Quincenal", "Mensual"])
-mes = p2.selectbox(
-    "📆 Mes:",
-    [
-        "Enero",
-        "Febrero",
-        "Marzo",
-        "Abril",
-        "Mayo",
-        "Junio",
-        "Julio",
-        "Agosto",
-        "Septiembre",
-        "Octubre",
-        "Noviembre",
-        "Diciembre",
-    ],
-)
+mes = p2.selectbox("📆 Mes:", ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"])
 ano = p3.selectbox("📅 Año:", ["2026", "2027", "2028"])
-
 
 # --- FUNCIONES DE PROCESAMIENTO ---
 def limpiar_monto(serie):
@@ -65,14 +44,17 @@ def limpiar_monto(serie):
           .str.strip(),
           errors="coerce",
       )
-      .fillna(0)
-      .abs()
+      .fillna(0.0)
+      .round(2)
   )
 
-
 def normalizar(file):
-  df = pd.read_csv(file, sep=None, engine="python", encoding="latin-1")
-  col = next((c for c in df.columns if "referencia" in c.lower()), None)
+  # Lectura directa de Excel conservando formatos originales
+  df = pd.read_excel(file, dtype=str)
+  col = next(
+      (c for c in df.columns if any(k in c.lower() for k in ["referencia", "ref", "documento", "doc", "nro"])),
+      None,
+  )
   if col:
     df = df.rename(columns={col: "Ref"})
   else:
@@ -80,32 +62,22 @@ def normalizar(file):
       df = df.rename(columns={df.columns[1]: "Ref"})
     else:
       df["Ref"] = ""
-  df["Ref"] = (
-      df["Ref"]
-      .fillna("")
-      .astype(str)
-      .str.strip()
-      .str.replace(r"\.0$", "", regex=True)
-  )
+  df["Ref"] = df["Ref"].fillna("").astype(str).str.replace(".0", "", regex=False).str.strip()
   return df
 
-
 def comparte_3_digitos_consecutivos(val1, val2):
-  s1 = str(int(round(val1 * 100)))
-  s2 = str(int(round(val2 * 100)))
-  if len(s1) < 3 or len(s2) < 3:
-    return False
+  s1 = f"{val1:.2f}".replace(".", "")
+  s2 = f"{val2:.2f}".replace(".", "")
+  if len(s1) < 3 or len(s2) < 3: return False
   for i in range(len(s1) - 2):
     sub = s1[i : i + 3]
-    if sub in s2:
-      return True
+    if sub in s2: return True
   return False
-
 
 # --- CARGA ---
 f_b, f_p = st.columns(2)
-file_b = f_b.file_uploader("📥 Estado de Cuenta", type=["csv"])
-file_p = f_p.file_uploader("📥 Reporte Profit", type=["csv"])
+file_b = f_b.file_uploader("📥 Estado de Cuenta (Excel)", type=["xlsx", "xls"])
+file_p = f_p.file_uploader("📥 Reporte Profit (Excel)", type=["xlsx", "xls"])
 
 if file_b and file_p:
   df_b = normalizar(file_b)
@@ -114,244 +86,39 @@ if file_b and file_p:
   df_b_proc = df_b.copy()
   df_p_proc = df_p.copy()
 
-  cols_b = list(df_b_proc.columns)
-  cols_p = list(df_p_proc.columns)
+  cols_b, cols_p = list(df_b_proc.columns), list(df_p_proc.columns)
+  deb_b_col = next((c for c in cols_b if "deb" in c.lower()), cols_b[3] if len(cols_b)>3 else None)
+  cred_b_col = next((c for c in cols_b if "cred" in c.lower()), cols_b[4] if len(cols_b)>4 else None)
+  deb_p_col = next((c for c in cols_p if "deb" in c.lower()), cols_p[3] if len(cols_p)>3 else None)
+  cred_p_col = next((c for c in cols_p if "hab" in c.lower()), cols_p[4] if len(cols_p)>4 else None)
 
-  deb_b_col = next(
-      (c for c in cols_b if any(k in c.lower() for k in ["deb", "debe"])),
-      cols_b[3] if len(cols_b) > 3 else None,
-  )
-  cred_b_col = next(
-      (c for c in cols_b if any(k in c.lower() for k in ["cred", "haber"])),
-      cols_b[4] if len(cols_b) > 4 else None,
-  )
-
-  deb_p_col = next(
-      (c for c in cols_p if any(k in c.lower() for k in ["deb", "debe"])),
-      cols_p[3] if len(cols_p) > 3 else None,
-  )
-  cred_p_col = next(
-      (c for c in cols_p if any(k in c.lower() for k in ["cred", "haber"])),
-      cols_p[4] if len(cols_p) > 4 else None,
-  )
-
-  df_b_proc["Debito"] = (
-      limpiar_monto(df_b_proc[deb_b_col]) if deb_b_col else 0.0
-  )
-  df_b_proc["Credito"] = (
-      limpiar_monto(df_b_proc[cred_b_col]) if cred_b_col else 0.0
-  )
-
+  df_b_proc["Debito"] = limpiar_monto(df_b_proc[deb_b_col]) if deb_b_col else 0.0
+  df_b_proc["Credito"] = limpiar_monto(df_b_proc[cred_b_col]) if cred_b_col else 0.0
   df_p_proc["Debe"] = limpiar_monto(df_p_proc[deb_p_col]) if deb_p_col else 0.0
-  df_p_proc["Haber"] = (
-      limpiar_monto(df_p_proc[cred_p_col]) if cred_p_col else 0.0
-  )
+  df_p_proc["Haber"] = limpiar_monto(df_p_proc[cred_p_col]) if cred_p_col else 0.0
 
-  # Columnas auxiliares
-  df_b_proc["Ref3"] = df_b_proc["Ref"].str[-3:]
-  df_p_proc["Ref3"] = df_p_proc["Ref"].str[-3:]
-  df_b_proc["orig_idx"] = df_b_proc.index
-  df_p_proc["orig_idx"] = df_p_proc.index
+  df_b_proc["Ref3"], df_p_proc["Ref3"] = df_b_proc["Ref"].str[-3:], df_p_proc["Ref"].str[-3:]
+  df_b_proc["orig_idx"], df_p_proc["orig_idx"] = df_b_proc.index, df_p_proc.index
 
-  # --- SEPARACIÓN INGRESOS Y EGRESOS ---
-  b_cred = df_b_proc[df_b_proc["Credito"] > 0].copy()
-  b_cred["Monto"] = b_cred["Credito"]
-  p_debe = df_p_proc[df_p_proc["Debe"] > 0].copy()
-  p_debe["Monto"] = p_debe["Debe"]
+  # --- CRUCES ---
+  b_cred, p_debe = df_b_proc[df_b_proc["Credito"] > 0].copy(), df_p_proc[df_p_proc["Debe"] > 0].copy()
+  b_cred["Monto"], p_debe["Monto"] = b_cred["Credito"], p_debe["Debe"]
+  
+  cruce_exacto = pd.merge(b_cred, p_debe, on=["Ref", "Monto"], suffixes=("_B", "_P"))
+  
+  idx_b_conc = set(cruce_exacto.get("orig_idx_B", []))
+  idx_p_conc = set(cruce_exacto.get("orig_idx_P", []))
 
-  b_deb = df_b_proc[df_b_proc["Debito"] > 0].copy()
-  b_deb["Monto"] = b_deb["Debito"]
-  p_haber = df_p_proc[df_p_proc["Haber"] > 0].copy()
-  p_haber["Monto"] = p_haber["Haber"]
-
-  # --- REGLA 1: CRUCE EXACTO (Ref + Monto) ---
-  cruce_ing_1 = pd.merge(
-      b_cred, p_debe, on=["Ref", "Monto"], suffixes=("_B", "_P")
-  )
-  cruce_eg_1 = pd.merge(
-      b_deb, p_haber, on=["Ref", "Monto"], suffixes=("_B", "_P")
-  )
-  exactos = pd.concat([cruce_ing_1, cruce_eg_1], ignore_index=True)
-
-  idx_b_conc = set(
-      cruce_ing_1.get("orig_idx_B", pd.Series(dtype=int)).tolist()
-      + cruce_eg_1.get("orig_idx_B", pd.Series(dtype=int)).tolist()
-  )
-  idx_p_conc = set(
-      cruce_ing_1.get("orig_idx_P", pd.Series(dtype=int)).tolist()
-      + cruce_eg_1.get("orig_idx_P", pd.Series(dtype=int)).tolist()
-  )
-
-  # --- REGLA 2: CRUCE POR ÚLTIMOS 3 DÍGITOS + MONTO ---
-  b_cred_rem = b_cred[~b_cred["orig_idx"].isin(idx_b_conc)]
-  p_debe_rem = p_debe[~p_debe["orig_idx"].isin(idx_p_conc)]
-  cruce_ing_2 = pd.merge(
-      b_cred_rem,
-      p_debe_rem,
-      on=["Ref3", "Monto"],
-      suffixes=("_B", "_P"),
-      how="inner",
-  )
-
-  b_deb_rem = b_deb[~b_deb["orig_idx"].isin(idx_b_conc)]
-  p_haber_rem = p_haber[~p_haber["orig_idx"].isin(idx_p_conc)]
-  cruce_eg_2 = pd.merge(
-      b_deb_rem,
-      p_haber_rem,
-      on=["Ref3", "Monto"],
-      suffixes=("_B", "_P"),
-      how="inner",
-  )
-
-  parciales_3dig = pd.concat([cruce_ing_2, cruce_eg_2], ignore_index=True)
-
-  for idx in cruce_ing_2.get("orig_idx_B", []):
-    idx_b_conc.add(idx)
-  for idx in cruce_ing_2.get("orig_idx_P", []):
-    idx_p_conc.add(idx)
-  for idx in cruce_eg_2.get("orig_idx_B", []):
-    idx_b_conc.add(idx)
-  for idx in cruce_eg_2.get("orig_idx_P", []):
-    idx_p_conc.add(idx)
-
-  conciliados = pd.concat([exactos, parciales_3dig], ignore_index=True)
-
-  # --- REGLA 3: SUMATORIA EN PROFIT (Varios registros Profit = 1 Banco) ---
-  b_cred_rem2 = b_cred[~b_cred["orig_idx"].isin(idx_b_conc)]
-  p_debe_rem2 = p_debe[~p_debe["orig_idx"].isin(idx_p_conc)]
-  sum_profit_debe = (
-      p_debe_rem2.groupby(["Ref", "Monto"])
-      .agg({"Debe": "sum", "orig_idx": lambda x: list(x)})
-      .reset_index()
-  )
-  cruce_sum_ing = pd.merge(
-      b_cred_rem2,
-      sum_profit_debe,
-      on=["Ref", "Monto"],
-      suffixes=("_B", "_P_sum"),
-  )
-
-  b_deb_rem2 = b_deb[~b_deb["orig_idx"].isin(idx_b_conc)]
-  p_haber_rem2 = p_haber[~p_haber["orig_idx"].isin(idx_p_conc)]
-  sum_profit_haber = (
-      p_haber_rem2.groupby(["Ref", "Monto"])
-      .agg({"Haber": "sum", "orig_idx": lambda x: list(x)})
-      .reset_index()
-  )
-  cruce_sum_eg = pd.merge(
-      b_deb_rem2,
-      sum_profit_haber,
-      on=["Ref", "Monto"],
-      suffixes=("_B", "_P_sum"),
-  )
-
-  por_sumatoria = pd.concat([cruce_sum_ing, cruce_sum_eg], ignore_index=True)
-
-  # --- PENDIENTES FINALES ---
-  df_b_pend = df_b_proc[~df_b_proc["orig_idx"].isin(idx_b_conc)].copy()
-  df_p_pend = df_p_proc[~df_p_proc["orig_idx"].isin(idx_p_conc)].copy()
-
-  # --- INVERSIONES / CRUCES DEBE - HABER ---
-  inv_ing = pd.merge(
-      b_cred[~b_cred["orig_idx"].isin(idx_b_conc)],
-      p_haber[~p_haber["orig_idx"].isin(idx_p_conc)],
-      on=["Ref", "Monto"],
-      suffixes=("_B", "_P"),
-  )
-  inv_eg = pd.merge(
-      b_deb[~b_deb["orig_idx"].isin(idx_b_conc)],
-      p_debe[~p_debe["orig_idx"].isin(idx_p_conc)],
-      on=["Ref", "Monto"],
-      suffixes=("_B", "_P"),
-  )
-  df_inversiones = pd.concat([inv_ing, inv_eg], ignore_index=True)
-
-  # --- REGLAS 4, 5 Y 6: DUPLICADOS Y ERRORES ---
-  df_p_proc["Monto_Total"] = df_p_proc["Debe"] + df_p_proc["Haber"]
-
-  # 4. Duplicados exactos (Ref + Monto_Total)
-  dup_exactos = df_p_proc[
-      df_p_proc.duplicated(subset=["Ref", "Monto_Total"], keep=False)
-  ].copy()
-  dup_exactos["Alerta_Duplicado"] = "⚠️ Duplicado Exacto (Ref y Monto)"
-
-  # 5. Duplicados por últimos 3 dígitos + Monto_Total
-  dup_3dig = df_p_proc[
-      df_p_proc.duplicated(subset=["Ref3", "Monto_Total"], keep=False)
-  ].copy()
-  dup_3dig["Alerta_Duplicado"] = "⚠️ Duplicado por Últimos 3 Dígitos y Monto"
-
-  # 6. Misma referencia y montos diferentes con al menos 3 números consecutivos iguales
-  lista_parciales = []
-  for ref, grupo in df_p_proc.groupby("Ref"):
-    if len(grupo) > 1 and ref != "" and ref != "0":
-      vals = grupo["Monto_Total"].values
-      idxs = grupo.index.values
-      for i in range(len(vals)):
-        for j in range(i + 1, len(vals)):
-          if vals[i] != vals[j]:
-            if comparte_3_digitos_consecutivos(vals[i], vals[j]):
-              lista_parciales.append(grupo.loc[[idxs[i], idxs[j]]])
-
-  if lista_parciales:
-    dup_parciales = pd.concat(lista_parciales).drop_duplicates().copy()
-    dup_parciales["Alerta_Duplicado"] = (
-        "🔴 Misma Ref / Montos diferentes (3 dígitos consec.)"
-    )
-  else:
-    dup_parciales = pd.DataFrame()
-
-  df_duplicados = pd.concat(
-      [dup_exactos, dup_3dig, dup_parciales], ignore_index=True
-  ).drop_duplicates(subset=["orig_idx", "Monto_Total"])
+  # --- DUPLICADOS/ERRORES ---
+  df_p_proc["Monto_Total"] = (df_p_proc["Debe"] + df_p_proc["Haber"]).round(2)
+  dup = df_p_proc[df_p_proc.duplicated(subset=["Ref", "Monto_Total"], keep=False)].copy()
+  dup["Alerta"] = "⚠️ Duplicado"
 
   # --- PESTAÑAS ---
-  t1, t2, t3, t4, t5 = st.tabs([
-      "✅ Conciliados",
-      "🔄 Cruces Debe/Haber",
-      "🏦 Pendientes Banco",
-      "💻 Pendientes Profit",
-      "⚠️ Duplicados/Errores",
-  ])
-
-  with t1:
-    st.subheader("Movimientos Conciliados")
-    st.dataframe(conciliados, use_container_width=True)
-    if not por_sumatoria.empty:
-      st.markdown("### ➕ Conciliaciones por Sumatoria (Múltiples registros)")
-      st.dataframe(por_sumatoria, use_container_width=True)
-
-  with t2:
-    st.dataframe(df_inversiones, use_container_width=True)
-  with t3:
-    st.dataframe(df_b_pend, use_container_width=True)
-  with t4:
-    st.dataframe(df_p_pend, use_container_width=True)
-  with t5:
-    st.dataframe(df_duplicados, use_container_width=True)
-
-  # --- DESCARGA ---
-  buffer = io.BytesIO()
-  with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
-    conciliados.to_excel(writer, index=False, sheet_name="Conciliados")
-    if not por_sumatoria.empty:
-      por_sumatoria.to_excel(writer, index=False, sheet_name="Por_Sumatoria")
-    df_inversiones.to_excel(
-        writer, index=False, sheet_name="Inversiones_DebeHaber"
-    )
-    df_b_pend.to_excel(writer, index=False, sheet_name="Pendientes_Banco")
-    df_p_pend.to_excel(writer, index=False, sheet_name="Pendientes_Profit")
-    df_duplicados.to_excel(writer, index=False, sheet_name="Duplicados")
-
-  st.download_button(
-      "📥 Descargar Conciliación Completa",
-      data=buffer.getvalue(),
-      file_name=f"Conciliacion_{empresa}_{mes}_{ano}.xlsx",
-  )
+  t1, t2, t3 = st.tabs(["✅ Conciliados", "💻 Pendientes Profit", "⚠️ Duplicados"])
+  with t1: st.dataframe(cruce_exacto, use_container_width=True)
+  with t2: st.dataframe(df_p_proc[~df_p_proc["orig_idx"].isin(idx_p_conc)], use_container_width=True)
+  with t3: st.dataframe(dup, use_container_width=True)
 
 # --- FOOTER ---
-st.markdown(
-    '<div class="footer"><p>© 2026 | Sistema Automatizado de Conciliación'
-    " Bancaria — Creado por Lic. Olgleidys Hernández ✨</p></div>",
-    unsafe_allow_html=True,
-)
+st.markdown('<div class="footer"><p>© 2026 | Sistema Automatizado de Conciliación Bancaria</p></div>', unsafe_allow_html=True)
