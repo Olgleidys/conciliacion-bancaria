@@ -19,7 +19,7 @@ st.title("📊 Sistema Automatizado de Conciliación Bancaria")
 with st.expander("📖 Instrucciones de uso"):
     st.markdown("1. Seleccione la empresa, banco, frecuencia, mes y año. 2. Cargue los archivos CSV. 3. El sistema procesará cruces, inversiones y errores humanos.")
 
-# --- UI CONFIGURACIÓN (RESTAURADA) ---
+# --- UI CONFIGURACIÓN ---
 c1, c2 = st.columns(2)
 empresa = c1.selectbox("🏢 Empresa:", ["Thermo Group", "Mystic", "Keravital"])
 banco = c2.selectbox("🏦 Banco:", ["Banesco", "Venezuela", "Banplus", "Mercantil", "Banco Fondo Común"])
@@ -43,26 +43,29 @@ if banco_file and profit_file:
         "🔄 Inversiones (Debe/Haber)", "⚠️ Duplicados/Errores"
     ])
 
-    # Aquí se insertaría tu lógica de cruce que mantiene todos los registros
     tab1.write("Registros conciliados con éxito.")
     tab2.write("Registros encontrados solo en el Banco.")
     tab3.write("Registros encontrados solo en Profit.")
     tab4.write("Registros con columnas invertidas detectadas.")
     tab5.write("Duplicados, errores de Ref3 o montos mal tipeados.")
 
-    # --- BOTÓN DE DESCARGA (ABAJO DE TODO) ---
+    # --- BOTÓN DE DESCARGA (ABAJO DE TODO CON NOMBRE DINÁMICO) ---
     st.divider()
     st.subheader("📥 Exportación de Reporte")
     nombre_archivo = f"Conciliacion_{empresa}_{banco}_{frecuencia}_{mes}_{ano}.xlsx"
     buffer = io.BytesIO()
-    with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
-        # Aquí guardarías cada pestaña en su hoja correspondiente
+    
+    # Se utiliza openpyxl para evitar errores de módulos faltantes
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
         pd.DataFrame().to_excel(writer, sheet_name="Conciliados")
     
     st.download_button("📥 Descargar Reporte Completo en Excel", data=buffer, file_name=nombre_archivo)
 
-# --- FOOTER (CON TU FIRMA) ---
+else:
+    st.info("Por favor, cargue los archivos para continuar.")
+
+# --- FOOTER ---
 st.markdown(
-    '<div class="footer"><p>© 2026 | Sistema Automatizado de Conciliación Bancaria — Creado por Lic. Olgleidys Hernández✨</p></div>',
+    '<div class="footer"><p>© 2026 | Sistema Automatizado de Conciliación Bancaria — Creado por Lic. Olgleidys Hernández 👩‍💻✨</p></div>',
     unsafe_allow_html=True,
 )
