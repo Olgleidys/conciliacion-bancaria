@@ -44,7 +44,6 @@ def estandarizar_columnas(df, tipo):
     df.columns = [c.lower().strip() for c in df.columns]
     df_new = pd.DataFrame()
     
-    # Mapeo flexible
     if tipo == "banco":
         cols_needed = ["fecha", "referencia", "descripcion", "debito", "credito"]
         for col in cols_needed:
@@ -65,7 +64,6 @@ def estandarizar_columnas(df, tipo):
     df_new["referencia"] = df_new["referencia"].astype(str).str.strip().replace("nan", "")
     df_new["ref_3"] = df_new["referencia"].apply(lambda x: x[-3:] if len(x) >= 3 else x)
     
-    # Llenado de información
     df_new["Empresa"] = empresa
     df_new["Banco"] = banco_sel
     df_new["Periodo"] = periodo
@@ -108,6 +106,7 @@ if file_b and file_p:
         pend_b = pend_b[~pend_b.index.isin(m2.index.get_level_values(0))]
         pend_p = pend_p[~pend_p.index.isin(m2.index.get_level_values(0))]
 
+    # Sumatorias
     df_p_sum = pend_p.groupby(["ref_3", "monto_final"])["monto_final"].sum().reset_index(name="suma_profit")
     m3 = pd.merge(pend_b, df_p_sum, on=["ref_3", "monto_final"])
     if not m3.empty:
@@ -128,16 +127,18 @@ if file_b and file_p:
         dup_5["Observaciones"] = "Regla 5: Duplicado 3 Digitos"
         alertas = pd.concat([alertas, dup_5])
 
-    # --- SELECCIÓN DE COLUMNAS ---
+    # --- SELECCIÓN DE COLUMNAS (Corregido para no buscar 'regla') ---
     cols_banco_show = ["Empresa", "Banco", "Periodo", "fecha", "referencia", "descripcion", "debito", "credito", "Observaciones"]
     cols_profit_show = ["Empresa", "Banco", "Periodo", "fecha", "referencia", "descripcion", "debe", "haber", "Observaciones"]
 
     # --- TABLAS ---
     tabs = st.tabs(["✅ Conciliado", "🏦 Pendiente Banco", "💻 Pendiente Profit", "🔄 Cruces", "⚠️ Alertas"])
-    tabs[0].dataframe(conciliados[cols_banco_show + ["regla"]], use_container_width=True)
+    
+    # Conciliado tiene columnas mezcladas por el merge, visualizamos sin filtro de columnas estrictas para evitar KeyErrors
+    tabs[0].dataframe(conciliados, use_container_width=True)
     tabs[1].dataframe(pend_b[cols_banco_show], use_container_width=True)
     tabs[2].dataframe(pend_p[cols_profit_show], use_container_width=True)
-    tabs[3].dataframe(cruce_dh[cols_banco_show], use_container_width=True)
+    tabs[3].dataframe(cruce_dh, use_container_width=True)
     tabs[4].dataframe(alertas[cols_banco_show].drop_duplicates(), use_container_width=True)
 
     # --- DESCARGA ---
