@@ -20,8 +20,8 @@ with st.expander("📖 Instrucciones de uso"):
     st.markdown("""
     1. Seleccione empresa, banco, frecuencia, mes y año.
     2. Cargue los archivos de Banco y Profit CSV.
-    3. La app realizará la conciliación automática en segundos.
-    4. Descargue la conciliación completa para su análisis.
+    3. La app realizará la conciliación automática en segundos.
+    4. Descargue la conciliación completa para su análisis. 
     """)
 
 # --- CONFIGURACIÓN DE PARÁMETROS ---
@@ -48,9 +48,9 @@ file_profit = b2.file_uploader("📥 Reporte de Profit Plus (.csv)", type="csv")
 
 if file_banco and file_profit:
     try:
-        # Se leen los archivos directamente sin saltar filas
-        df_b = pd.read_csv(file_banco)
-        df_p = pd.read_csv(file_profit)
+        # Se añade encoding='latin-1' y motor de Python para leer correctamente delimitadores y tildes
+        df_b = pd.read_csv(file_banco, encoding='latin-1', sep=None, engine='python')
+        df_p = pd.read_csv(file_profit, encoding='latin-1', sep=None, engine='python')
         
         # Normalización de referencias
         df_p['Ref_Procesada'] = df_p['Referencia'].apply(limpiar_ref_profit)
