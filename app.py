@@ -73,7 +73,7 @@ if file_b and file_p:
 
     # --- DESCARGA ---
     buffer = io.BytesIO()
-    with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
+    with pd.ExcelWriter(buffer, engine="openpyxl") as writer:
         conciliados.to_excel(writer, sheet_name="Conciliados")
         duplicados.to_excel(writer, sheet_name="Duplicados")
     
