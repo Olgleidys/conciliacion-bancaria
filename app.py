@@ -21,8 +21,8 @@ with st.expander("📖 Instrucciones de uso"):
   st.markdown("""
     1. **Configuración:** Seleccione la empresa, el banco, la frecuencia, el mes y el año correspondientes.
     2. **Carga de Archivos:** Suba el estado de cuenta bancario y el reporte de Profit Plus en formato `.csv`.
-    3. **Procesamiento:** El sistema analizará automáticamente ambos archivos y validará los movimientos aplicando cruces exactos, por últimos 3 dígitos y sumatorias de múltiples registros.
-    4. **Resultados:** Revise las pestañas (Conciliados, Inversiones, Pendientes Banco, Pendientes Profit y Duplicados/Errores).
+    3. **Procesamiento:** El sistema analizará automáticamente ambos archivos aplicando cruces exactos, por últimos 3 dígitos, sumatorias múltiples y detección de duplicados/errores.
+    4. **Resultados:** Revise las pestañas de Conciliados, Cruces Debe/Haber, Pendientes y Duplicados/Errores.
     5. **Exportación:** Haga clic en el botón de descarga al final para obtener el reporte completo en formato Excel.
     """)
 
@@ -88,6 +88,18 @@ def normalizar(file):
       .str.replace(r"\.0$", "", regex=True)
   )
   return df
+
+
+def comparte_3_digitos_consecutivos(val1, val2):
+  s1 = str(int(round(val1 * 100)))
+  s2 = str(int(round(val2 * 100)))
+  if len(s1) < 3 or len(s2) < 3:
+    return False
+  for i in range(len(s1) - 2):
+    sub = s1[i : i + 3]
+    if sub in s2:
+      return True
+  return False
 
 
 # --- CARGA ---
@@ -202,14 +214,11 @@ if file_b and file_p:
   for idx in cruce_eg_2.get("orig_idx_P", []):
     idx_p_conc.add(idx)
 
-  # Consolidar conciliados
   conciliados = pd.concat([exactos, parciales_3dig], ignore_index=True)
 
   # --- REGLA 3: SUMATORIA EN PROFIT (Varios registros Profit = 1 Banco) ---
-  # Evaluamos pendientes actuales en banco (ingresos)
   b_cred_rem2 = b_cred[~b_cred["orig_idx"].isin(idx_b_conc)]
   p_debe_rem2 = p_debe[~p_debe["orig_idx"].isin(idx_p_conc)]
-
   sum_profit_debe = (
       p_debe_rem2.groupby(["Ref", "Monto"])
       .agg({"Debe": "sum", "orig_idx": lambda x: list(x)})
@@ -224,7 +233,6 @@ if file_b and file_p:
 
   b_deb_rem2 = b_deb[~b_deb["orig_idx"].isin(idx_b_conc)]
   p_haber_rem2 = p_haber[~p_haber["orig_idx"].isin(idx_p_conc)]
-
   sum_profit_haber = (
       p_haber_rem2.groupby(["Ref", "Monto"])
       .agg({"Haber": "sum", "orig_idx": lambda x: list(x)})
@@ -258,24 +266,44 @@ if file_b and file_p:
   )
   df_inversiones = pd.concat([inv_ing, inv_eg], ignore_index=True)
 
-  # --- REGLA 4 Y 5: DUPLICADOS Y ERRORES ---
+  # --- REGLAS 4, 5 Y 6: DUPLICADOS Y ERRORES ---
   df_p_proc["Monto_Total"] = df_p_proc["Debe"] + df_p_proc["Haber"]
 
-  # Duplicados exactos (Ref + Monto_Total)
+  # 4. Duplicados exactos (Ref + Monto_Total)
   dup_exactos = df_p_proc[
-      (df_p_proc["Ref"] != "")
-      & df_p_proc.duplicated(subset=["Ref", "Monto_Total"], keep=False)
+      df_p_proc.duplicated(subset=["Ref", "Monto_Total"], keep=False)
   ].copy()
-  dup_exactos["Tipo_Duplicado"] = "Exacto (Ref y Monto)"
+  dup_exactos["Alerta_Duplicado"] = "⚠️ Duplicado Exacto (Ref y Monto)"
 
-  # Duplicados por últimos 3 dígitos + Monto_Total
+  # 5. Duplicados por últimos 3 dígitos + Monto_Total
   dup_3dig = df_p_proc[
-      (df_p_proc["Ref"] != "")
-      & df_p_proc.duplicated(subset=["Ref3", "Monto_Total"], keep=False)
+      df_p_proc.duplicated(subset=["Ref3", "Monto_Total"], keep=False)
   ].copy()
-  dup_3dig["Tipo_Duplicado"] = "Por Últimos 3 Dígitos y Monto"
+  dup_3dig["Alerta_Duplicado"] = "⚠️ Duplicado por Últimos 3 Dígitos y Monto"
 
-  df_duplicados = pd.concat([dup_exactos, dup_3dig], ignore_index=True)
+  # 6. Misma referencia y montos diferentes con al menos 3 números consecutivos iguales
+  lista_parciales = []
+  for ref, grupo in df_p_proc.groupby("Ref"):
+    if len(grupo) > 1 and ref != "" and ref != "0":
+      vals = grupo["Monto_Total"].values
+      idxs = grupo.index.values
+      for i in range(len(vals)):
+        for j in range(i + 1, len(vals)):
+          if vals[i] != vals[j]:
+            if comparte_3_digitos_consecutivos(vals[i], vals[j]):
+              lista_parciales.append(grupo.loc[[idxs[i], idxs[j]]])
+
+  if lista_parciales:
+    dup_parciales = pd.concat(lista_parciales).drop_duplicates().copy()
+    dup_parciales["Alerta_Duplicado"] = (
+        "🔴 Misma Ref / Montos diferentes (3 dígitos consec.)"
+    )
+  else:
+    dup_parciales = pd.DataFrame()
+
+  df_duplicados = pd.concat(
+      [dup_exactos, dup_3dig, dup_parciales], ignore_index=True
+  ).drop_duplicates(subset=["orig_idx", "Monto_Total"])
 
   # --- PESTAÑAS ---
   t1, t2, t3, t4, t5 = st.tabs([
@@ -287,7 +315,7 @@ if file_b and file_p:
   ])
 
   with t1:
-    st.subheader("Movimientos Conciliados (Exactos y por 3 Dígitos)")
+    st.subheader("Movimientos Conciliados")
     st.dataframe(conciliados, use_container_width=True)
     if not por_sumatoria.empty:
       st.markdown("### ➕ Conciliaciones por Sumatoria (Múltiples registros)")
