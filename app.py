@@ -174,14 +174,21 @@ if file_b and file_p:
             # Resaltar en rojo los errores de digitación
             def highlight_errors(val):
                 return 'background-color: #780000; color: white' if 'Error Digitacion' in str(val) else ''
-            st.dataframe(df_alertas.style.applymap(highlight_errors, subset=['Alerta']), use_container_width=True)
+            
+            # Soporte para versiones recientes y antiguas de pandas
+            if hasattr(df_alertas.style, 'map'):
+                st.dataframe(df_alertas.style.map(highlight_errors, subset=['Alerta']), use_container_width=True)
+            else:
+                st.dataframe(df_alertas.style.applymap(highlight_errors, subset=['Alerta']), use_container_width=True)
         else:
             st.success("No se detectaron duplicados ni errores de digitación.")
 
     # --- BOTÓN DE DESCARGA EN EXCEL ---
     st.markdown("---")
     output = io.BytesIO()
-    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+    
+    # Motor cambiado a openpyxl para evitar el error de ModuleNotFoundError
+    with pd.ExcelWriter(output, engine='openpyxl') as writer:
         if not conciliados.empty: conciliados.to_excel(writer, sheet_name="Conciliado", index=False)
         pendientes_b.to_excel(writer, sheet_name="Pendiente Banco", index=False)
         pendientes_p.to_excel(writer, sheet_name="Pendiente Profit", index=False)
