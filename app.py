@@ -18,10 +18,10 @@ st.title("📊 Sistema Automatizado de Conciliación Bancaria")
 
 with st.expander("📖 Instrucciones de uso"):
     st.markdown("""
-    1. Seleccione la empresa, banco, frecuencia, mes y año.
-    2. Cargue los archivos de Banco y Profit CSV. 
+    1. Seleccione empresa, banco, frecuencia, mes y año.
+    2. Cargue los archivos de Banco y Profit CSV.
     3. La app realizará la conciliación automática en segundos.
-    4. Descargue la conciliación completa para su análisis.
+    4. Descargue la conciliación completa para su análisis.
     """)
 
 # --- CONFIGURACIÓN DE PARÁMETROS ---
@@ -33,7 +33,6 @@ c3, c4, c5 = st.columns(3)
 frecuencia = c3.selectbox("⏱️ Frecuencia:", ["Semanal", "Quincenal", "Mensual"])
 mes = c4.selectbox("📆 Mes:", ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"])
 ano = c5.selectbox("📅 Año:", list(range(2026, 2030)))
-
 
 # --- LÓGICA DE PROCESAMIENTO ---
 def limpiar_ref_profit(ref):
@@ -48,37 +47,43 @@ file_banco = b1.file_uploader("📥 Estado de Cuenta Bancario (.csv)", type="csv
 file_profit = b2.file_uploader("📥 Reporte de Profit Plus (.csv)", type="csv")
 
 if file_banco and file_profit:
-    df_b = pd.read_csv(file_banco, skiprows=skip_rows)
-    df_p = pd.read_csv(file_profit, skiprows=skip_rows)
-    
-    # Normalización
-    df_p['Ref_Procesada'] = df_p['Referencia'].apply(limpiar_ref_profit)
-    df_b['Ref_Procesada'] = df_b['Referencia'].astype(str).str.strip()
-    
-    df_b['Ref_Corto'] = df_b['Ref_Procesada'].str[-3:]
-    df_p['Ref_Corto'] = df_p['Ref_Procesada'].str[-3:]
+    try:
+        # Se leen los archivos directamente sin saltar filas
+        df_b = pd.read_csv(file_banco)
+        df_p = pd.read_csv(file_profit)
+        
+        # Normalización de referencias
+        df_p['Ref_Procesada'] = df_p['Referencia'].apply(limpiar_ref_profit)
+        df_b['Ref_Procesada'] = df_b['Referencia'].astype(str).str.strip()
+        
+        df_b['Ref_Corto'] = df_b['Ref_Procesada'].str[-3:]
+        df_p['Ref_Corto'] = df_p['Ref_Procesada'].str[-3:]
 
-    # PESTAÑAS
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
-        "✅ Conciliados", "🏦 Pendientes Banco", "💻 Pendientes Profit", 
-        "🔄 Inversiones", "⚠️ Duplicados/Errores"
-    ])
-    
-    tab1.dataframe(df_b, use_container_width=True)
-    tab2.dataframe(df_b, use_container_width=True)
-    tab3.dataframe(df_p, use_container_width=True)
-    
-    # EXPORTACIÓN
-    st.divider()
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        df_b.to_excel(writer, sheet_name="Conciliados", index=False)
-    
-    st.download_button(
-        label="📥 Descargar Reporte Completo en Excel",
-        data=output.getvalue(),
-        file_name=f"Conciliacion {empresa} {banco} {mes} {ano}.xlsx"
-    )
+        # PESTAÑAS
+        tab1, tab2, tab3, tab4, tab5 = st.tabs([
+            "✅ Conciliados", "🏦 Pendientes Banco", "💻 Pendientes Profit", 
+            "🔄 Inversiones", "⚠️ Duplicados/Errores"
+        ])
+        
+        tab1.dataframe(df_b, use_container_width=True)
+        tab2.dataframe(df_b, use_container_width=True)
+        tab3.dataframe(df_p, use_container_width=True)
+        
+        # EXPORTACIÓN
+        st.divider()
+        st.subheader("📥 Exportación Final")
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine="openpyxl") as writer:
+            df_b.to_excel(writer, sheet_name="Conciliados", index=False)
+            df_p.to_excel(writer, sheet_name="Pendientes_Profit", index=False)
+        
+        st.download_button(
+            label="📥 Descargar Reporte Completo en Excel",
+            data=output.getvalue(),
+            file_name=f"Conciliacion {empresa} {banco} {mes} {ano}.xlsx"
+        )
+    except Exception as e:
+        st.error(f"Error al procesar los archivos: {e}. Verifica que las columnas correspondan con los datos.")
 
 # --- FOOTER ---
 st.markdown("<br><br><div class='footer'>© 2026 | Sistema Automatizado de Conciliación Bancaria — Creado por Lic. Olgleidys Hernández ✨</div>", unsafe_allow_html=True)
