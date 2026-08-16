@@ -28,7 +28,7 @@ with st.expander("📖 Instrucciones de uso"):
 # --- CONFIGURACIÓN ---
 col1, col2 = st.columns(2)
 empresa = col1.selectbox("🏢 Empresa:", ["Thermo Group", "Mystic", "Keravital"])
-banco = col2.selectbox("🏦 Banco:", ["Banesco", "Venezuela", "Banplus", "Mercantil", "BFC"])
+banco = col2.selectbox("🏦 Banco:", ["Banesco", "Venezuela", "Banplus", "Banplus Mazal", "Mercantil", "BFC"])
 
 c3, c4, c5 = st.columns(3)
 frecuencia = c3.selectbox("⏱️ Frecuencia:", ["Semanal", "Quincenal", "Mensual"])
