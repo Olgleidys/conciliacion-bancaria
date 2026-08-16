@@ -16,7 +16,7 @@ st.markdown(custom_css, unsafe_allow_html=True)
 
 st.title("📊 Sistema Automatizado de Conciliación Bancaria")
 
-# --- INSTRUCCIONES (VISIBLES) ---
+# --- INSTRUCCIONES ---
 st.markdown("### 📝 Instrucciones de uso")
 st.markdown("""
 1. **Configuración**: Seleccione la empresa, el banco y el periodo correspondiente.
@@ -25,7 +25,7 @@ st.markdown("""
 4. **Descarga**: Haga clic en el botón inferior para descargar el reporte consolidado.
 """)
 
-# --- DATOS CORPORATIVOS (VISIBLES) ---
+# --- DATOS CORPORATIVOS ---
 st.markdown("### 📋 Datos Corporativos")
 c1, c2 = st.columns(2)
 empresa = c1.selectbox("🏢 Empresa:", ["Thermo Group", "Mystic", "Keravital"])
@@ -35,6 +35,10 @@ frecuencia = p1.selectbox("⏱️ Frecuencia:", ["Semanal", "Quincenal", "Mensua
 mes = p2.selectbox("📆 Mes:", ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"])
 ano = p3.selectbox("📅 Año:", ["2026", "2027", "2028"])
 periodo = f"{frecuencia} {mes} {ano}"
+
+# --- COLUMNAS DEFINIDAS ---
+cols_banco_show = ["Empresa", "Banco", "Periodo", "fecha", "referencia", "descripcion", "debito", "credito", "Observaciones"]
+cols_profit_show = ["Empresa", "Banco", "Periodo", "fecha", "referencia", "descripcion", "debe", "haber", "Observaciones"]
 
 # --- FUNCIONES ---
 def limpiar_monto(serie):
@@ -106,7 +110,6 @@ if file_b and file_p:
         pend_b = pend_b[~pend_b.index.isin(m2.index.get_level_values(0))]
         pend_p = pend_p[~pend_p.index.isin(m2.index.get_level_values(0))]
 
-    # Sumatorias
     df_p_sum = pend_p.groupby(["ref_3", "monto_final"])["monto_final"].sum().reset_index(name="suma_profit")
     m3 = pd.merge(pend_b, df_p_sum, on=["ref_3", "monto_final"])
     if not m3.empty:
@@ -127,19 +130,14 @@ if file_b and file_p:
         dup_5["Observaciones"] = "Regla 5: Duplicado 3 Digitos"
         alertas = pd.concat([alertas, dup_5])
 
-    # --- SELECCIÓN DE COLUMNAS (Corregido para no buscar 'regla') ---
-    cols_banco_show = ["Empresa", "Banco", "Periodo", "fecha", "referencia", "descripcion", "debito", "credito", "Observaciones"]
-    cols_profit_show = ["Empresa", "Banco", "Periodo", "fecha", "referencia", "descripcion", "debe", "haber", "Observaciones"]
-
     # --- TABLAS ---
     tabs = st.tabs(["✅ Conciliado", "🏦 Pendiente Banco", "💻 Pendiente Profit", "🔄 Cruces", "⚠️ Alertas"])
     
-    # Conciliado tiene columnas mezcladas por el merge, visualizamos sin filtro de columnas estrictas para evitar KeyErrors
-    tabs[0].dataframe(conciliados, use_container_width=True)
+    tabs[0].dataframe(conciliados if not conciliados.empty else pd.DataFrame(), use_container_width=True)
     tabs[1].dataframe(pend_b[cols_banco_show], use_container_width=True)
     tabs[2].dataframe(pend_p[cols_profit_show], use_container_width=True)
-    tabs[3].dataframe(cruce_dh, use_container_width=True)
-    tabs[4].dataframe(alertas[cols_banco_show].drop_duplicates(), use_container_width=True)
+    tabs[3].dataframe(cruce_dh if not cruce_dh.empty else pd.DataFrame(), use_container_width=True)
+    tabs[4].dataframe(alertas[cols_banco_show].drop_duplicates() if not alertas.empty else pd.DataFrame(), use_container_width=True)
 
     # --- DESCARGA ---
     output = io.BytesIO()
