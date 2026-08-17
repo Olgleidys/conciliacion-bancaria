@@ -35,7 +35,7 @@ empresa = c1.selectbox(
 )
 banco = c2.selectbox(
     "🏦 Seleccione el banco:",
-    ["Banesco", "Venezuela", "Banplus", "Mercantil", "Banco Fondo Común"],
+    ["Banesco", "Venezuela", "Banplus", "Banplus Mazal", "Mercantil", "BFC"],
 )
 
 p1, p2, p3 = st.columns(3)
@@ -57,7 +57,7 @@ mes = p2.selectbox(
         "Diciembre",
     ],
 )
-ano = p3.selectbox("📅 Año:", ["2026", "2027", "2025"])
+ano = p3.selectbox("📅 Año:", ["2026", "2027", "2028"])
 
 b1, b2 = st.columns(2)
 banco_file = b1.file_uploader(
@@ -261,6 +261,7 @@ if banco_file and profit_file:
       "🔄 Inversiones (Debe/Haber)",
       "🏦 Pendientes Banco",
       "💻 Pendientes Profit",
+      "⚠️ Alertas",
   ])
 
   with tab1:
@@ -302,7 +303,7 @@ if banco_file and profit_file:
     st.dataframe(df_p_duplicados[cols_dup_show], use_container_width=True)
 
   # --- NOMBRE DINÁMICO PARA EL ARCHIVO EXCEL ---
-  nombre_archivo = f"Conciliacion_{empresa}_{banco}_{frecuencia}_{mes}_{ano}.xlsx"
+  nombre_archivo = f"Conciliacion {empresa} {banco} {frecuencia} {mes} {ano}.xlsx"
 
   # --- DESCARGA ---
   output = io.BytesIO()
