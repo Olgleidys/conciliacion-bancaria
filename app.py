@@ -20,12 +20,12 @@ st.title("📊 Sistema Automatizado de Conciliación Bancaria")
 st.markdown("### 📝 Instrucciones de uso")
 st.markdown("""
 1. **Configuración**: Seleccione la empresa, el banco y el periodo correspondiente.
-2. **Carga de Archivos**: Suba el Estado de Cuenta del Banco y el Reporte de Profit Plus.
-3. **Revisión**: El sistema aplicará las reglas de conciliación (1-3) y validará posibles duplicados y errores en Profit (4-6).
-4. **Descarga**: Haga clic en el botón inferior para descargar el reporte consolidado.
+2. **Carga de Archivos**: Suba al sistema el Estado de Cuenta del Banco y el Reporte Profit Plus.
+3. **Revisión**: El sistema aplicará las reglas de conciliación y validará posibles duplicados y errores.
+4. **Descarga**: Haga clic en el botón inferior para obtener su archivo consolidado.
 """)
 
-# --- DATOS CORPORATIVOS (VISIBLES) ---
+# --- DATOS CORPORATIVOS ---
 st.markdown("### 📋 Datos Corporativos")
 c1, c2 = st.columns(2)
 empresa = c1.selectbox("🏢 Empresa:", ["Thermo Group", "Mystic", "Keravital"])
@@ -65,8 +65,10 @@ def estandarizar_columnas(df, tipo):
         df_new["haber"] = limpiar_monto(df_new["haber"])
         df_new["monto_final"] = df_new["debe"] - df_new["haber"]
 
-    df_new["referencia"] = df_new["referencia"].astype(str).str.strip().replace("nan", "").replace("None", "")
-    df_new["ref_3"] = df_new["referencia"].apply(lambda x: x[-3:] if len(x) >= 3 else x)
+    # Referencia limpia para visualización y ref_clean para cruces exactos sin ceros a la izquierda
+    df_new["referencia"] = df_new["referencia"].astype(str).str.strip().replace("nan", "").replace("None", "").str.replace(".0", "", regex=False)
+    df_new["ref_clean"] = df_new["referencia"].str.lstrip("0")
+    df_new["ref_3"] = df_new["ref_clean"].apply(lambda x: x[-3:] if len(x) >= 3 else x)
     
     df_new["Empresa"] = empresa
     df_new["Banco"] = banco_sel
@@ -95,8 +97,8 @@ if file_b and file_p:
     conciliados = pd.DataFrame(columns=cols_banco_show)
     alertas = pd.DataFrame(columns=cols_profit_show)
 
-    # --- REGLAS DE CONCILIACIÓN (1 - 3) ---
-    m1 = pd.merge(pend_b, pend_p, on=["referencia", "monto_final"], suffixes=("_B", "_P"))
+    # --- REGLAS DE CONCILIACIÓN USANDO ref_clean ---
+    m1 = pd.merge(pend_b, pend_p, on=["ref_clean", "monto_final"], suffixes=("_B", "_P"))
     if not m1.empty:
         m1["Observaciones"] = "Regla 1: Conciliación Exacta"
         conciliados = pd.concat([conciliados, m1], ignore_index=True)
@@ -116,33 +118,26 @@ if file_b and file_p:
         m3["Observaciones"] = "Regla 3: Sumatoria Profit"
         conciliados = pd.concat([conciliados, m3], ignore_index=True)
 
-    # --- CRUCES ---
-    cruce_dh = pd.merge(df_b[df_b["debito"] != 0], df_p[df_p["haber"] != 0], on="referencia")
+    # --- INVERTIDOS ---
+    cruce_dh = pd.merge(df_b[df_b["debito"] != 0], df_p[df_p["haber"] != 0], on="ref_clean")
     cruce_dh = cruce_dh[cruce_dh["debito"] == cruce_dh["haber"]]
-    cruce_dh["Observaciones"] = "Cruce: Debe Banco vs Haber Profit"
+    cruce_dh["Observaciones"] = "Invertido: Debe Banco vs Haber Profit"
 
-    # --- DETECCIÓN DE DUPLICADOS Y ALERTAS EN PROFIT (4 - 6) ---
+    # --- DUPLICADOS Y ERRORES EN PROFIT ---
     df_p_flat = df_p.copy()
-    df_p_flat["ref_check"] = df_p_flat["referencia"].astype(str).str.strip()
-    df_p_flat["monto_check"] = df_p_flat["monto_final"].astype(str).str.strip()
-    df_p_flat["ref_3_check"] = df_p_flat["ref_3"].astype(str).str.strip()
-
-    # 4. Duplicado Exacto en Profit
-    dups_exact = df_p[df_p_flat.duplicated(subset=["ref_check", "monto_check"], keep=False) & (df_p_flat["ref_check"] != "")]
+    dups_exact = df_p[df_p_flat.duplicated(subset=["ref_clean", "monto_final"], keep=False) & (df_p_flat["ref_clean"] != "")]
     if not dups_exact.empty:
         dups_exact = dups_exact.copy()
         dups_exact["Observaciones"] = "Regla 4: Duplicado Exacto en Profit"
         alertas = pd.concat([alertas, dups_exact], ignore_index=True)
     
-    # 5. Duplicado 3 dígitos en Profit
-    dups_3 = df_p[df_p_flat.duplicated(subset=["ref_3_check", "monto_check"], keep=False) & (df_p_flat["ref_check"] != "")]
+    dups_3 = df_p[df_p_flat.duplicated(subset=["ref_3", "monto_final"], keep=False) & (df_p_flat["ref_clean"] != "")]
     if not dups_3.empty:
         dups_3 = dups_3.copy()
         dups_3["Observaciones"] = "Regla 5: Duplicado 3 Digitos en Profit"
         alertas = pd.concat([alertas, dups_3], ignore_index=True)
 
-    # 6. Error de 4 dígitos consecutivos en Profit
-    for ref, group in df_p[df_p["referencia"] != ""].groupby("referencia"):
+    for ref, group in df_p[df_p["ref_clean"] != ""].groupby("ref_clean"):
         if len(group) > 1:
             for i, row1 in group.iterrows():
                 for j, row2 in group.iterrows():
@@ -151,8 +146,8 @@ if file_b and file_p:
                         err["Observaciones"] = "Regla 6: Error 4 Digitos Consecutivos en Profit"
                         alertas = pd.concat([alertas, err], ignore_index=True)
 
-    # --- TABLAS CON SEGURIDAD ---
-    tabs = st.tabs(["✅ Conciliado", "🏦 Pendiente Banco", "💻 Pendiente Profit", "🔄 Cruces", "⚠️ Alertas (Profit)"])
+    # --- TABLAS EN INTERFAZ ---
+    tabs = st.tabs(["✅ Conciliado", "🏦 Pendiente Banco", "💻 Pendiente Profit", "🔄 Invertidos", "⚠️ Duplicados/Errores"])
     
     tabs[0].dataframe(conciliados.reindex(columns=cols_banco_show), use_container_width=True)
     tabs[1].dataframe(pend_b.reindex(columns=cols_banco_show), use_container_width=True)
@@ -166,9 +161,9 @@ if file_b and file_p:
         conciliados.to_excel(writer, sheet_name="Conciliado", index=False)
         pend_b.to_excel(writer, sheet_name="Pendiente Banco", index=False)
         pend_p.to_excel(writer, sheet_name="Pendiente Profit", index=False)
-        cruce_dh.to_excel(writer, sheet_name="Cruces DH", index=False)
-        alertas.to_excel(writer, sheet_name="Alertas Profit", index=False)
-    st.download_button("📥 DESCARGAR REPORTE", output.getvalue(), f"Conciliacion_{empresa}_{mes}_{ano}.xlsx")
+        cruce_dh.to_excel(writer, sheet_name="Invertidos", index=False)
+        alertas.to_excel(writer, sheet_name="Duplicados_Errores", index=False)
+    st.download_button("📥 Descargar Conciliación Completa", output.getvalue(), f"Conciliacion_{empresa}_{mes}_{ano}.xlsx")
 
 # --- FOOTER ---
 st.markdown('<br><br><div class="footer"><p>© 2026 | Sistema Automatizado de Conciliación Bancaria — Creado por Lic. Olgleidys Hernández ✨</p></div>', unsafe_allow_html=True)
