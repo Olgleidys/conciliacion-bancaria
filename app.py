@@ -16,7 +16,7 @@ st.markdown(custom_css, unsafe_allow_html=True)
 
 st.title("📊 Sistema Automatizado de Conciliación Bancaria")
 
-# --- INSTRUCCIONES ---
+# --- INSTRUCCIONES (VISIBLES) ---
 st.markdown("### 📝 Instrucciones de uso")
 st.markdown("""
 1. **Configuración**: Seleccione la empresa, el banco y el periodo correspondiente.
@@ -92,21 +92,21 @@ if file_b and file_p:
     df_p = estandarizar_columnas(pd.read_excel(file_p), "profit")
     
     pend_b, pend_p = df_b.copy(), df_p.copy()
-    conciliados = pd.DataFrame()
-    alertas = pd.DataFrame()
+    conciliados = pd.DataFrame(columns=cols_banco_show)
+    alertas = pd.DataFrame(columns=cols_banco_show)
 
     # --- REGLAS ---
     m1 = pd.merge(pend_b, pend_p, on=["referencia", "monto_final"], suffixes=("_B", "_P"))
     if not m1.empty:
         m1["Observaciones"] = "Regla 1: Conciliación Exacta"
-        conciliados = pd.concat([conciliados, m1])
+        conciliados = pd.concat([conciliados, m1], ignore_index=True)
         pend_b = pend_b[~pend_b.index.isin(m1.index.get_level_values(0))]
         pend_p = pend_p[~pend_p.index.isin(m1.index.get_level_values(0))]
 
     m2 = pd.merge(pend_b, pend_p, on=["ref_3", "monto_final"], suffixes=("_B", "_P"))
     if not m2.empty:
         m2["Observaciones"] = "Regla 2: Ref 3 Digitos + Monto"
-        conciliados = pd.concat([conciliados, m2])
+        conciliados = pd.concat([conciliados, m2], ignore_index=True)
         pend_b = pend_b[~pend_b.index.isin(m2.index.get_level_values(0))]
         pend_p = pend_p[~pend_p.index.isin(m2.index.get_level_values(0))]
 
@@ -114,7 +114,7 @@ if file_b and file_p:
     m3 = pd.merge(pend_b, df_p_sum, on=["ref_3", "monto_final"])
     if not m3.empty:
         m3["Observaciones"] = "Regla 3: Sumatoria Profit"
-        conciliados = pd.concat([conciliados, m3])
+        conciliados = pd.concat([conciliados, m3], ignore_index=True)
 
     cruce_dh = pd.merge(df_b[df_b["debito"] != 0], df_p[df_p["haber"] != 0], on="referencia")
     cruce_dh = cruce_dh[cruce_dh["debito"] == cruce_dh["haber"]]
@@ -123,21 +123,21 @@ if file_b and file_p:
     dup_4 = df_b[df_b.duplicated(subset=["referencia", "monto_final"], keep=False) & (df_b["referencia"] != "")]
     if not dup_4.empty:
         dup_4["Observaciones"] = "Regla 4: Duplicado Exacto"
-        alertas = pd.concat([alertas, dup_4])
+        alertas = pd.concat([alertas, dup_4], ignore_index=True)
     
     dup_5 = df_b[df_b.duplicated(subset=["ref_3", "monto_final"], keep=False) & (df_b["referencia"] != "")]
     if not dup_5.empty:
         dup_5["Observaciones"] = "Regla 5: Duplicado 3 Digitos"
-        alertas = pd.concat([alertas, dup_5])
+        alertas = pd.concat([alertas, dup_5], ignore_index=True)
 
-    # --- TABLAS ---
+    # --- TABLAS CON SEGURIDAD ---
     tabs = st.tabs(["✅ Conciliado", "🏦 Pendiente Banco", "💻 Pendiente Profit", "🔄 Cruces", "⚠️ Alertas"])
     
-    tabs[0].dataframe(conciliados if not conciliados.empty else pd.DataFrame(), use_container_width=True)
-    tabs[1].dataframe(pend_b[cols_banco_show], use_container_width=True)
-    tabs[2].dataframe(pend_p[cols_profit_show], use_container_width=True)
-    tabs[3].dataframe(cruce_dh if not cruce_dh.empty else pd.DataFrame(), use_container_width=True)
-    tabs[4].dataframe(alertas[cols_banco_show].drop_duplicates() if not alertas.empty else pd.DataFrame(), use_container_width=True)
+    tabs[0].dataframe(conciliados.reindex(columns=cols_banco_show), use_container_width=True)
+    tabs[1].dataframe(pend_b.reindex(columns=cols_banco_show), use_container_width=True)
+    tabs[2].dataframe(pend_p.reindex(columns=cols_profit_show), use_container_width=True)
+    tabs[3].dataframe(cruce_dh.reindex(columns=cols_banco_show), use_container_width=True)
+    tabs[4].dataframe(alertas.reindex(columns=cols_banco_show).drop_duplicates(), use_container_width=True)
 
     # --- DESCARGA ---
     output = io.BytesIO()
