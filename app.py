@@ -1,4 +1,5 @@
 import io
+import re  # <-- IMPORTANTE: Añadido para manejar expresiones regulares
 import pandas as pd
 import streamlit as st
 
@@ -80,9 +81,23 @@ def limpiar_monto(serie):
     )
 
 
+# --- FUNCIÓN PARA ELIMINAR CARACTERES ILEGALES PARA OPENPYXL ---
+def limpiar_caracteres_ilegales(val):
+    if isinstance(val, str):
+        # Elimina caracteres de control ASCII no permitidos por openpyxl en Excel
+        return re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]", "", val)
+    return val
+
+
 if banco_file and profit_file:
     df_b = pd.read_csv(banco_file, sep=None, engine="python", encoding="latin-1")
     df_p = pd.read_csv(profit_file, sep=None, engine="python", encoding="latin-1")
+
+    # Aplicar limpieza de caracteres ilegales en columnas de tipo texto
+    for col in df_b.select_dtypes(include=["object"]).columns:
+        df_b[col] = df_b[col].apply(limpiar_caracteres_ilegales)
+    for col in df_p.select_dtypes(include=["object"]).columns:
+        df_p[col] = df_p[col].apply(limpiar_caracteres_ilegales)
 
     df_b_proc = df_b.copy()
     df_p_proc = df_p.copy()
@@ -160,7 +175,7 @@ if banco_file and profit_file:
 
     # --- IDENTIFICAR DUPLICADOS EN PROFIT ---
     df_p_proc["Monto_Total_Duplicidad"] = df_p_proc["Debe"] + df_p_proc["Haber"]
-    
+
     # 1. Duplicados por Referencia Exacta y Monto
     df_p_proc["Es_Duplicado"] = df_p_proc.duplicated(
         subset=["Ref", "Monto_Total_Duplicidad"], keep=False
@@ -168,7 +183,7 @@ if banco_file and profit_file:
     df_p["Es_Duplicado"] = df_p_proc["Es_Duplicado"]
     df_p_duplicados = df_p[df_p["Es_Duplicado"]].copy()
 
-    # 2. NUEVO: Duplicados por Últimos 3 Dígitos (Ref3) y Monto (Solo para referencias válidas)
+    # 2. Duplicados por Últimos 3 Dígitos (Ref3) y Monto (Solo para referencias válidas)
     mask_ref3_dup = (
         (df_p_proc["Ref3"] != "")
         & (df_p_proc["Ref"].str.len() > 2)
@@ -305,38 +320,64 @@ if banco_file and profit_file:
 
     with tab5:
         st.markdown("### ⚠️ Detección de Duplicados en Profit")
-        
+
         # Seccion 1: Duplicados por Referencia Exacta
         st.markdown("#### 📌 1. Duplicados por Nro. de Referencia Exacto y Monto")
         if not df_p_duplicados.empty:
             cols_dup_show = [
-                c for c in df_p_duplicados.columns if c not in ["Monto_Total_Duplicidad", "Es_Duplicado_Ref3"]
+                c
+                for c in df_p_duplicados.columns
+                if c not in ["Monto_Total_Duplicidad", "Es_Duplicado_Ref3"]
             ]
             st.dataframe(df_p_duplicados[cols_dup_show], use_container_width=True)
         else:
-            st.success("No se detectaron registros duplicados por referencia exacta en Profit.")
+            st.success(
+                "No se detectaron registros duplicados por referencia exacta en"
+                " Profit."
+            )
 
         st.markdown("---")
 
         # Seccion 2: Duplicados por Últimos 3 Dígitos (Ref3)
-        st.markdown("#### 📌 2. Duplicados por Últimos 3 Dígitos (`Ref3`) y Monto")
+        st.markdown(
+            "#### 📌 2. Duplicados por Últimos 3 Dígitos (`Ref3`) y Monto"
+        )
         if not df_p_duplicados_ref3.empty:
             cols_dup_ref3_show = [
-                c for c in df_p_duplicados_ref3.columns if c not in ["Monto_Total_Duplicidad", "Es_Duplicado", "Es_Duplicado_Ref3"]
+                c
+                for c in df_p_duplicados_ref3.columns
+                if c
+                not in [
+                    "Monto_Total_Duplicidad",
+                    "Es_Duplicado",
+                    "Es_Duplicado_Ref3",
+                ]
             ]
-            st.dataframe(df_p_duplicados_ref3[cols_dup_ref3_show], use_container_width=True)
+            st.dataframe(
+                df_p_duplicados_ref3[cols_dup_ref3_show],
+                use_container_width=True,
+            )
         else:
-            st.success("No se detectaron registros duplicados por últimos 3 dígitos (`Ref3`) en Profit.")
+            st.success(
+                "No se detectaron registros duplicados por últimos 3 dígitos"
+                " (`Ref3`) en Profit."
+            )
 
     # --- NOMBRE DINÁMICO PARA EL ARCHIVO EXCEL ---
-    nombre_archivo = f"Conciliacion {empresa} {banco} {frecuencia} {mes} {ano}.xlsx"
+    nombre_archivo = (
+        f"Conciliacion {empresa} {banco} {frecuencia} {mes} {ano}.xlsx"
+    )
 
     # --- DESCARGA ---
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        cruce_final_display.to_excel(writer, index=False, sheet_name="Conciliados")
+        cruce_final_display.to_excel(
+            writer, index=False, sheet_name="Conciliados"
+        )
         if not df_inversiones.empty:
-            df_inversiones.to_excel(writer, index=False, sheet_name="Inversiones_DebeHaber")
+            df_inversiones.to_excel(
+                writer, index=False, sheet_name="Inversiones_DebeHaber"
+            )
         df_b_pendientes.to_excel(
             writer, index=False, sheet_name="Pendientes_Banco"
         )
@@ -345,14 +386,23 @@ if banco_file and profit_file:
         )
         if not df_p_duplicados.empty:
             cols_dup_show = [
-                c for c in df_p_duplicados.columns if c not in ["Monto_Total_Duplicidad", "Es_Duplicado_Ref3"]
+                c
+                for c in df_p_duplicados.columns
+                if c not in ["Monto_Total_Duplicidad", "Es_Duplicado_Ref3"]
             ]
             df_p_duplicados[cols_dup_show].to_excel(
                 writer, index=False, sheet_name="Duplicados_Profit"
             )
         if not df_p_duplicados_ref3.empty:
             cols_dup_ref3_show = [
-                c for c in df_p_duplicados_ref3.columns if c not in ["Monto_Total_Duplicidad", "Es_Duplicado", "Es_Duplicado_Ref3"]
+                c
+                for c in df_p_duplicados_ref3.columns
+                if c
+                not in [
+                    "Monto_Total_Duplicidad",
+                    "Es_Duplicado",
+                    "Es_Duplicado_Ref3",
+                ]
             ]
             df_p_duplicados_ref3[cols_dup_ref3_show].to_excel(
                 writer, index=False, sheet_name="Duplicados_Ref3_Profit"
